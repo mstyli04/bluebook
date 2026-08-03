@@ -112,11 +112,12 @@ BASE = Drivers(
     # Balliol Park distribution-centre build programme. Base case tapers back
     # toward, and lands AT, the ~11% historical run-rate by FY2030 (13.27% ->
     # 11.00%, a 227bp decline) rather than tapering through it — 11.00% sits
-    # at the top of the 3-year historical range (10.95%-13.27%), not below
-    # it, since the DC build programme moderates capex intensity but doesn't
-    # eliminate the ongoing store/estate capex that sits under it. Because
-    # this is the terminal-year driver that FCF gets capitalised on in
-    # perpetuity, ending materially below the historical range would
+    # just above the 3-year historical LOW of 10.95% (FY2023), i.e. near the
+    # bottom of the historical range (10.95%-13.27%), not below it, since the
+    # DC build programme moderates capex intensity but doesn't eliminate the
+    # ongoing store/estate capex that sits under it. Because this is the
+    # terminal-year driver that FCF gets capitalised on in perpetuity, ending
+    # below the historical range (as an earlier draft did, at 8.5%) would
     # understate terminal value; owner ruling, see task-4-report.md fix log.
     capex_pct_revenue=(0.1327, 0.1250, 0.1180, 0.1130, 0.1100),
 
@@ -189,9 +190,12 @@ BASE = Drivers(
     # Same basis as cost_of_debt - approximate rate on the drawn RCF.
     interest_rate_debt=0.055,
     # FY2023-25 actual cash balances were £195.3m / £125.3m / £70.8m
-    # (falling as the capex and dividend programme stepped up). The minimum
-    # cash floor is set below the FY2025 low as a conservative liquidity
-    # buffer, so the model can flag if forecast cash needs external funding.
+    # (falling as the capex and dividend programme stepped up, alongside a
+    # £25m RCF draw in FY2025). The floor is set at £50m, below the FY2025
+    # actual low of £70.8m: it is a hard minimum the forecast is tested
+    # against to flag when the business would need external financing
+    # (e.g. a further revolver draw) to keep operating, not a target
+    # buffer the model tries to hold cash above.
     minimum_cash=50.0,
     # Greggs' stated ordinary dividend policy targets ~50% of underlying
     # post-tax profit. FY2023-25 actual cash payout (dividends_paid / net
@@ -208,38 +212,72 @@ def _scenario(
     growth_delta: float,
     margin_delta: float,
     opex_delta: float,
-    capex_delta: float,
     exit_ev_ebitda: float,
+    capex_delta: float | None = None,
+    capex_pct_revenue: tuple[float, ...] | None = None,
 ) -> Drivers:
-    """Derive a scenario by shifting operating drivers off the base case."""
+    """Derive a scenario by shifting operating drivers off the base case.
+
+    capex_pct_revenue is either a uniform capex_delta applied to every year
+    of the base path, or an explicit tuple supplied by the caller (used for
+    Bear, whose capex path is floored rather than a pure uniform shift — see
+    the comment beside its definition below).
+    """
+    if capex_pct_revenue is None:
+        if capex_delta is None:
+            raise ValueError("supply either capex_delta or capex_pct_revenue")
+        capex_pct_revenue = tuple(c + capex_delta for c in base.capex_pct_revenue)
     return replace(
         base,
         revenue_growth=tuple(g + growth_delta for g in base.revenue_growth),
         gross_margin=tuple(m + margin_delta for m in base.gross_margin),
         opex_pct_revenue=tuple(o + opex_delta for o in base.opex_pct_revenue),
-        capex_pct_revenue=tuple(c + capex_delta for c in base.capex_pct_revenue),
+        capex_pct_revenue=capex_pct_revenue,
         exit_ev_ebitda=exit_ev_ebitda,
     )
 
+
+# Bear capex path — explicit, not a uniform shift off Base.
+#
+# A uniform base_delta=-0.010 applied to the (revised) Base path would give
+# (12.27%, 11.50%, 10.80%, 10.30%, 10.00%): the last two years fall below
+# the entire 3-year historical range (10.95%-13.27%), which is exactly the
+# defect that was fixed on the Base case (a terminal-year capex ratio below
+# the historical range mechanically inflates terminal FCF, undercutting the
+# stress the Bear case is meant to depict).
+#
+# Instead: the first two years ease by the same -1.0pp as a uniform shift
+# would (12.27%, 11.50%) — a slower store rollout under demand/cost
+# pressure is a reasonable near-term stress read — but from FY2028 the path
+# is floored at the historical low of 10.95% (FY2023) and held there,
+# rather than continuing to taper down. Bear is still below Base in every
+# forecast year (e.g. 10.95% vs Base's 11.00% by FY2030), so it still reads
+# as tighter capex discipline than Base, just not tighter than Greggs has
+# ever actually run.
+BEAR_CAPEX_PCT_REVENUE = (0.1227, 0.1150, 0.1095, 0.1095, 0.1095)
 
 SCENARIOS = {
     # Consumer-slowdown / cost-inflation case: growth decelerates further,
     # gross margin compresses under input-cost pressure, opex ratio worsens
     # (less operating leverage), capex intensity eases as store rollout
-    # slows, and the exit multiple de-rates.
+    # slows (floored at the historical low, see BEAR_CAPEX_PCT_REVENUE above),
+    # and the exit multiple de-rates.
     "Bear": _scenario(
         BASE,
         growth_delta=-0.03,
         margin_delta=-0.015,
         opex_delta=0.010,
-        capex_delta=-0.010,
+        capex_pct_revenue=BEAR_CAPEX_PCT_REVENUE,
         exit_ev_ebitda=8.5,
     ),
     "Base": BASE,
     # Continued strong footfall/expansion case: growth holds up better,
     # margin expands on scale/mix, opex ratio improves further with
-    # operating leverage, capex intensity rises with a faster rollout, and
-    # the exit multiple re-rates up.
+    # operating leverage, capex intensity rises with a faster rollout
+    # (a uniform +1.0pp over Base raises no floor/ceiling concern here, and
+    # keeps Bull's capex path strictly above Base's at every year, which is
+    # what funding faster growth than Base should imply), and the exit
+    # multiple re-rates up.
     "Bull": _scenario(
         BASE,
         growth_delta=0.025,
