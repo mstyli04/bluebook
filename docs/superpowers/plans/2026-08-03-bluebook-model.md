@@ -14,7 +14,8 @@
 - Forecast horizon: **5 years**. Historicals: **3 years** (FY2023, FY2024, FY2025).
 - Statement sheets use column B for labels, **C/D/E for historicals**, **F/G/H/I/J for forecast years**. Row 1 is the sheet title, row 2 the year header.
 - Lease treatment is **post-IFRS 16 throughout**: EBITDA excludes rent, right-of-use depreciation sits in D&A, and lease liabilities are included in net debt in the EV→equity bridge. This basis applies identically to the DCF, comps and LBO. No sheet may deviate.
-- Colour conventions: **blue** (`FF0000FF`) = hardcoded input, **black** (`FF000000`) = on-sheet formula, **green** (`FF008000`) = link from another sheet. Hardcodes are permitted **only** on the `Assumptions` and `Historicals` sheets.
+- Colour conventions: **blue** (`FF0000FF`) = hardcoded input, **black** (`FF000000`) = on-sheet formula, **green** (`FF008000`) = link from another sheet.
+- Hardcoded numeric constants are permitted **only** on these five sheets, each for a stated reason, and nowhere else: `Assumptions` (the model's inputs), `Historicals` (transcribed reported figures), `Comps` (peer market data with no formula source), `Cover` (dates and identifiers), `Checks` (threshold constants in check formulas). Every calculation sheet — `IS`, `BS`, `CF`, `Schedules`, `DCF`, `Sensitivity`, `LBO`, `Football Field` — must contain formulas only. Task 16's `HARDCODE_ALLOWED` set is the enforcement of this rule and must match this list exactly.
 - No historical figure may be entered without a source reference (annual report year + page). Figures are transcribed from filings, never recalled or estimated.
 - Every Excel formula string written by `workbook/` must be produced via the `ref()` helper from Task 5 — never by hand-concatenating sheet names and cell addresses.
 - Money is in £m unless a line is explicitly labelled otherwise. Share counts in millions. Per-share figures in pence.
