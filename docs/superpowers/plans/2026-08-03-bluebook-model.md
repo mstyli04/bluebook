@@ -554,6 +554,48 @@ def test_rates_are_fractions_not_percentages(name: str):
     drivers = SCENARIOS[name]
     assert 0.0 < drivers.tax_rate < 1.0
     assert all(-0.5 < g < 0.5 for g in drivers.revenue_growth)
+
+
+# --- Calibration against actuals -------------------------------------------
+# These exist because an earlier draft of this plan set opex_pct_revenue to
+# 0.50 against a FY2025 actual of ~45.1%, which silently near-halved the
+# forecast EBIT margin. Drivers must be anchored to the transcribed
+# historicals, and any deliberate divergence must be explicit.
+
+def _last_actual_ratios():
+    from bluebook.inputs.greggs import GREGGS_HISTORICALS
+
+    y = GREGGS_HISTORICALS[-1]
+    revenue = y.revenue.value
+    da = y.depreciation_ppe.value + y.depreciation_rou.value + y.amortisation.value
+    ebit = revenue - y.cost_of_sales.value - y.operating_costs.value - da
+    return {
+        "gross_margin": (revenue - y.cost_of_sales.value) / revenue,
+        "opex_pct_revenue": y.operating_costs.value / revenue,
+        "da_pct_revenue": da / revenue,
+        "ebit_margin": ebit / revenue,
+    }
+
+
+def test_base_gross_margin_anchored_to_last_actual():
+    actual = _last_actual_ratios()["gross_margin"]
+    assert abs(SCENARIOS["Base"].gross_margin[0] - actual) <= 0.015
+
+
+def test_base_opex_ratio_anchored_to_last_actual():
+    actual = _last_actual_ratios()["opex_pct_revenue"]
+    assert abs(SCENARIOS["Base"].opex_pct_revenue[0] - actual) <= 0.015
+
+
+def test_base_case_year_one_ebit_margin_tracks_last_actual():
+    """The base case must not silently re-rate profitability in year one."""
+    actual = _last_actual_ratios()
+    base = SCENARIOS["Base"]
+    implied = base.gross_margin[0] - base.opex_pct_revenue[0] - actual["da_pct_revenue"]
+    assert abs(implied - actual["ebit_margin"]) <= 0.015, (
+        f"base-case year-1 EBIT margin {implied:.1%} diverges from "
+        f"FY2025 actual {actual['ebit_margin']:.1%} by more than 150bp"
+    )
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -563,7 +605,25 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'bluebook.assumptions'`
 
 - [ ] **Step 3: Implement**
 
-All rates are fractions (`0.05`, not `5`). Values below are structurally correct starting points; set them from the filings' recent trends and prevailing UK rates, and note the basis in a comment beside each.
+All rates are fractions (`0.05`, not `5`).
+
+**Calibration is mandatory, and the values in the listing below are NOT usable as written.**
+They are structural placeholders that demonstrably fail the calibration tests above: the
+listed `opex_pct_revenue` of 0.50 sits against a FY2025 actual near 45.1%, which would
+near-halve the forecast EBIT margin against an actual of ~8.5% and produce a valuation no
+interviewer would accept.
+
+Compute each operating driver from `GREGGS_HISTORICALS` before setting it — gross margin,
+opex as a share of revenue, and the depreciation rates as a share of the relevant *opening
+balance* (not of revenue, though the resulting D&A should land near the historical ~7.8% of
+revenue). Anchor year-one values to the most recent actual, then let them drift across the
+forecast only where you can state a reason. Write the actual historical ratio in a comment
+beside every driver you set, so a reader can see what it was anchored to.
+
+Market-rate drivers (risk-free rate, equity risk premium, beta, cost of debt) come from
+outside the filings; state the basis for each in a comment. Where a driver is deliberately
+set away from its historical anchor, say why in the comment — the calibration tests permit
+150bp of divergence, and anything wider needs the reason written down.
 
 ```python
 # src/bluebook/assumptions.py
