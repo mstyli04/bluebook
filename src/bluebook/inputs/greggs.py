@@ -19,15 +19,25 @@ Conventions applied throughout:
 * Basis: "Total" column of the income statement, i.e. INCLUDING exceptional
   items, so the figures tie to reported operating profit and profit before tax.
 * Group (consolidated) column of the balance sheet, never the Parent Company.
+* `depreciation_ppe` and `depreciation_rou` each INCLUDE the year's net impairment
+  charge on that asset class (PPE impairment in `depreciation_ppe`, right-of-use
+  impairment in `depreciation_rou`). Impairment is a non-cash charge, and the
+  model's free cash flow bridge adds back D&A while deducting capex in full;
+  leaving impairment inside EBIT with no add-back would double-count it against
+  capex. Amounts and pages are recorded beside each value.
 * `operating_costs` is distribution and selling costs + administrative expenses,
-  LESS other income, LESS total D&A (see the note beside each value). Greggs does
-  not disclose how D&A splits across cost of sales / distribution / admin (FY2025
-  AR p.138 states ROU depreciation sits in "cost of sales, selling and distribution
-  costs or administrative expenses as appropriate"), so `operating_costs` is
-  defined as the residual that makes
-      revenue - cost_of_sales - operating_costs - D&A = reported operating profit
-  hold exactly for each year. Impairment of PPE/ROU is NOT part of the D&A fields
-  and therefore remains inside `operating_costs`.
+  LESS other income, LESS everything carried in the `depreciation_*` and
+  `amortisation` fields (i.e. D&A and impairment). Greggs does not disclose how D&A
+  splits across cost of sales / distribution / admin (FY2025 AR p.138 states ROU
+  depreciation sits in "cost of sales, selling and distribution costs or
+  administrative expenses as appropriate"), so `operating_costs` is defined as the
+  residual that makes
+      revenue - cost_of_sales - operating_costs
+          - depreciation_ppe - depreciation_rou - amortisation
+          = reported operating profit
+  hold exactly for each year. The full build-up of the residual is written out in
+  the comment beside each year's value, so the figure is recoverable from this file
+  without reopening the PDFs.
 * `other_assets` / `other_liabilities` are the genuine sum of the balance sheet
   lines not itemised in the schema, taken line by line from the face of the
   balance sheet. They are not plugs.
@@ -45,8 +55,9 @@ from __future__ import annotations
 from bluebook.inputs.schema import HistoricalYear, Sourced
 
 # Stated on the face of each primary statement; all three years are 52-week
-# periods ending on a Saturday in late December. Greggs notes that 2014 and 2020
-# were 53-week years (FY2025 AR p.174, ten-year history).
+# periods ending on a Saturday in late December. Greggs notes that 2020 was a
+# 53-week year (FY2025 AR p.174, ten-year history) and that 2014 and 2020 were
+# 53-week years (FY2024 AR p.172, ten-year history).
 GREGGS_FYE_CONVENTION = (
     "52/53-week financial year ending on a Saturday in late December. "
     "FY2023 = 52 weeks ended 30 December 2023; "
@@ -62,10 +73,19 @@ FY2023 = HistoricalYear(
     # --- Income statement (FY2023 AR p.119, "2023 Total" column) ---
     revenue=Sourced(1809.6, "FY2023 AR p.119"),
     cost_of_sales=Sourced(710.5, "FY2023 AR p.119"),
-    # 844.2 distribution and selling + 82.9 admin - 20.3 other income - 125.0 D&A
-    operating_costs=Sourced(781.8, "FY2023 AR p.119, p.124 (D&A)"),
-    depreciation_ppe=Sourced(66.6, "FY2023 AR p.124"),
-    depreciation_rou=Sourced(54.5, "FY2023 AR p.124"),
+    # Residual build-up (all FY2023 AR p.119 unless stated):
+    #   844.2 distribution and selling costs
+    # +  82.9 administrative expenses
+    # -  20.3 other income
+    # -  66.6 depreciation of PPE            (p.124)
+    # -   1.4 net impairment of PPE          (p.124)
+    # -  54.5 depreciation of ROU assets     (p.124)
+    # -   2.5 impairment of ROU assets       (p.124)
+    # -   3.9 amortisation                   (p.124)
+    # = 777.9
+    operating_costs=Sourced(777.9, "FY2023 AR p.119, p.124 (D&A and impairment)"),
+    depreciation_ppe=Sourced(68.0, "FY2023 AR p.124"),  # 66.6 depreciation + 1.4 net impairment of PPE
+    depreciation_rou=Sourced(57.0, "FY2023 AR p.124"),  # 54.5 depreciation + 2.5 impairment of ROU assets
     amortisation=Sourced(3.9, "FY2023 AR p.124"),
     # The FY2023 AR presents finance expense net (p.119, £4.0m net; Note 6 p.140).
     # The gross split is taken from the FY2024 AR's comparative column, which is
@@ -99,10 +119,19 @@ FY2024 = HistoricalYear(
     # --- Income statement (FY2024 AR p.128, "2024 Total" column) ---
     revenue=Sourced(2014.4, "FY2024 AR p.128"),
     cost_of_sales=Sourced(770.8, "FY2024 AR p.128"),
-    # 950.1 distribution and selling + 97.9 admin - 13.8 other income - 140.0 D&A
-    operating_costs=Sourced(894.2, "FY2024 AR p.128, p.147 (D&A)"),
-    depreciation_ppe=Sourced(76.6, "FY2024 AR p.147 (Note 3)"),
-    depreciation_rou=Sourced(59.2, "FY2024 AR p.147 (Note 3)"),
+    # Residual build-up (all FY2024 AR p.128 unless stated):
+    #   950.1 distribution and selling costs
+    # +  97.9 administrative expenses
+    # -  13.8 other income
+    # -  76.6 depreciation of owned PPE          (p.147, Note 3)
+    # -   2.9 net impairment of owned PPE        (p.147, Note 3)
+    # -  59.2 depreciation of ROU assets         (p.147, Note 3)
+    # -   2.1 net impairment of ROU assets       (p.147, Note 3)
+    # -   4.2 amortisation                       (p.147, Note 3)
+    # = 889.2
+    operating_costs=Sourced(889.2, "FY2024 AR p.128, p.147 (D&A and impairment)"),
+    depreciation_ppe=Sourced(79.5, "FY2024 AR p.147 (Note 3)"),  # 76.6 depreciation + 2.9 net impairment of owned PPE
+    depreciation_rou=Sourced(61.3, "FY2024 AR p.147 (Note 3)"),  # 59.2 depreciation + 2.1 net impairment of ROU assets
     amortisation=Sourced(4.2, "FY2024 AR p.147 (Note 3)"),
     finance_costs=Sourced(13.6, "FY2024 AR p.128"),
     finance_income=Sourced(8.1, "FY2024 AR p.128"),
@@ -135,10 +164,19 @@ FY2025 = HistoricalYear(
     # --- Income statement (FY2025 AR p.128, "2025 Total" column) ---
     revenue=Sourced(2151.2, "FY2025 AR p.128"),
     cost_of_sales=Sourced(829.1, "FY2025 AR p.128"),
-    # 1,036.3 distribution and selling + 102.1 admin - 0.0 other income - 160.6 D&A
-    operating_costs=Sourced(977.8, "FY2025 AR p.128, p.148 (D&A)"),
-    depreciation_ppe=Sourced(90.7, "FY2025 AR p.148 (Note 3)"),
-    depreciation_rou=Sourced(65.2, "FY2025 AR p.148 (Note 3)"),
+    # Residual build-up (all FY2025 AR p.128 unless stated):
+    #   1,036.3 distribution and selling costs
+    # +   102.1 administrative expenses
+    # -     0.0 other income (nil in 2025)
+    # -    90.7 depreciation of owned PPE        (p.148, Note 3)
+    # -     3.9 net impairment of owned PPE      (p.148, Note 3; 5.5 charge less 1.6 release, p.156 Note 12)
+    # -    65.2 depreciation of ROU assets       (p.148, Note 3)
+    # -     3.0 net impairment of ROU assets     (p.148, Note 3; 4.9 charge less 1.9 release, p.155 Note 11)
+    # -     4.7 amortisation                     (p.148, Note 3)
+    # =   970.9
+    operating_costs=Sourced(970.9, "FY2025 AR p.128, p.148 (D&A and impairment)"),
+    depreciation_ppe=Sourced(94.6, "FY2025 AR p.148 (Note 3)"),  # 90.7 depreciation + 3.9 net impairment of owned PPE
+    depreciation_rou=Sourced(68.2, "FY2025 AR p.148 (Note 3)"),  # 65.2 depreciation + 3.0 net impairment of ROU assets
     amortisation=Sourced(4.7, "FY2025 AR p.148 (Note 3)"),
     finance_costs=Sourced(18.1, "FY2025 AR p.128"),  # incl. 16.7 lease interest and 0.7 exceptional
     finance_income=Sourced(1.8, "FY2025 AR p.128"),

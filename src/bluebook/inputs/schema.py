@@ -24,9 +24,9 @@ class HistoricalYear:
     # Income statement
     revenue: Sourced
     cost_of_sales: Sourced
-    operating_costs: Sourced        # distribution + admin, excluding D&A
-    depreciation_ppe: Sourced
-    depreciation_rou: Sourced       # right-of-use asset depreciation
+    operating_costs: Sourced        # distribution + admin, less other income, less D&A and impairment
+    depreciation_ppe: Sourced       # includes net impairment of PPE
+    depreciation_rou: Sourced       # right-of-use asset depreciation, including net ROU impairment
     amortisation: Sourced
     finance_costs: Sourced          # includes lease interest
     finance_income: Sourced
