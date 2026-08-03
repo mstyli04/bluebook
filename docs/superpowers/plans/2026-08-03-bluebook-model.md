@@ -201,6 +201,21 @@ git add pyproject.toml src/bluebook/__init__.py src/bluebook/recalc.py tests/tes
 git commit -m "feat: headless LibreOffice recalculation harness"
 ```
 
+> **As-built corrections (2026-08-03).** The `recalc.py` listed above shipped with three
+> defects that review caught; `src/bluebook/recalc.py` as committed is canonical, not the
+> listing above. (1) `recalc_values()` deleted only the `profile` subdirectory, leaking the
+> enclosing temp directory on every call — it now removes the whole `mkdtemp()` directory in a
+> `finally` block, and `recalc()` cleans up on its error paths too, while still persisting its
+> successful output for the caller. (2) `subprocess.run` was unwrapped, so `TimeoutExpired` and
+> `FileNotFoundError` escaped as bare exceptions and `returncode` was never inspected — all
+> failures now raise `RecalcError`. (3) Tests were happy-path only; the suite is now 9 tests
+> covering the error branches, string/bool cell types, multiple worksheets, `recalc()` in
+> isolation, and temp-directory cleanup. The return annotation is
+> `dict[str, dict[str, float | str | bool | None]]`.
+>
+> Also recorded for later tasks: `soffice` emits `javaldx` warnings on stderr during normal
+> successful conversions. Do not treat stderr output as a failure signal — check `returncode`.
+
 ---
 
 ### Task 2: Circularity spike
