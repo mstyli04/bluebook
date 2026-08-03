@@ -95,22 +95,30 @@ BASE = Drivers(
 
     # Year 1 anchored exactly to the FY2025 actual (61.46%). FY2023-25 actual
     # was 60.7% / 61.7% / 61.5% - roughly flat within a ~100bp band. Base case
-    # models a modest 70bp improvement over 5 years from supply-chain
-    # investment (new distribution centres) reaching scale.
+    # models a modest 54bp improvement over 5 years (0.6200 - 0.6146) from
+    # supply-chain investment (new distribution centres) reaching scale.
     gross_margin=(0.6146, 0.6165, 0.6180, 0.6190, 0.6200),
 
     # Year 1 anchored exactly to the FY2025 actual (45.13%). FY2023-25 actual
     # was rising (43.0% / 44.1% / 45.1%), driven by wage inflation and the
     # front-loaded cost of new DC capacity coming online. Base case assumes
     # that capacity reaching utilisation partially offsets the rising trend,
-    # easing ~90bp over the forecast rather than reversing it entirely.
+    # easing 83bp over the forecast (0.4513 - 0.4430) rather than reversing
+    # it entirely.
     opex_pct_revenue=(0.4513, 0.4480, 0.4460, 0.4445, 0.4430),
 
     # Year 1 anchored exactly to the FY2025 actual (13.27%). FY2023-25 actual
-    # was rising (10.9% / 12.0% / 13.3%) through the Derby/Kettering/Balliol
-    # Park distribution-centre build programme. Base case tapers back toward
-    # the ~11% historical run-rate as that programme completes.
-    capex_pct_revenue=(0.1327, 0.1200, 0.1000, 0.0900, 0.0850),
+    # was rising (10.95% / 11.96% / 13.27%) through the Derby/Kettering/
+    # Balliol Park distribution-centre build programme. Base case tapers back
+    # toward, and lands AT, the ~11% historical run-rate by FY2030 (13.27% ->
+    # 11.00%, a 227bp decline) rather than tapering through it — 11.00% sits
+    # at the top of the 3-year historical range (10.95%-13.27%), not below
+    # it, since the DC build programme moderates capex intensity but doesn't
+    # eliminate the ongoing store/estate capex that sits under it. Because
+    # this is the terminal-year driver that FCF gets capitalised on in
+    # perpetuity, ending materially below the historical range would
+    # understate terminal value; owner ruling, see task-4-report.md fix log.
+    capex_pct_revenue=(0.1327, 0.1250, 0.1180, 0.1130, 0.1100),
 
     # Year 1 anchored (rounded) to the FY2025 actual of 3.48%. FY2023-25
     # actual was volatile (3.9% / 7.1% / 3.5%, reflecting lumpy lease
@@ -164,7 +172,11 @@ BASE = Drivers(
     cost_of_debt=0.055,
     # Greggs is very lightly geared - FY2025 borrowings were only £25m drawn
     # on its £100m RCF against £625.2m of book equity - so a low target
-    # weight is used.
+    # weight is used. This is financial debt only: FY2025 lease_liabilities
+    # of £449.8m are deliberately excluded from the WACC debt base here (they
+    # are financed at the lease discount rate embedded in finance_costs, not
+    # at cost_of_debt), so target_debt_weight understates total balance-sheet
+    # leverage including leases.
     target_debt_weight=0.10,
 
     # Long-run UK inflation/nominal-GDP proxy, consistent with the BoE's 2%
