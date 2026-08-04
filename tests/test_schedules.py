@@ -3,7 +3,7 @@ import pytest
 from bluebook.assumptions import SCENARIOS
 from bluebook.inputs.greggs import GREGGS_HISTORICALS
 from bluebook.schedules.fixed_assets import fixed_assets
-from bluebook.schedules.leases import leases
+from bluebook.schedules.leases import LEASE_DISCOUNT_RATE, leases
 from bluebook.schedules.working_capital import working_capital
 
 BASE = SCENARIOS["Base"]
@@ -58,7 +58,25 @@ def test_lease_liability_rolls_forward_on_additions_and_principal():
     )
     # Interest is still computed and returned (Task 8 needs it for the P&L
     # finance cost line) — only its effect on the liability balance changed.
-    assert lz.interest[0] == pytest.approx(850.0 * BASE.cost_of_debt)
+    assert lz.interest[0] == pytest.approx(850.0 * LEASE_DISCOUNT_RATE)
+
+
+def test_lease_interest_uses_the_disclosed_lease_rate_not_the_cost_of_debt():
+    """Lease liabilities are discounted at the rate implicit in the lease,
+    not at the rate on Greggs' revolver. Charging cost_of_debt (5.5%) against
+    a book that actually costs ~4.0% overstated finance costs by ~£8m/year.
+    """
+    fy2025 = GREGGS_HISTORICALS[-1]
+    fy2024_closing_liability = GREGGS_HISTORICALS[-2].lease_liabilities.value
+
+    # The disclosed FY2025 lease interest, reproduced off the actual opening
+    # balance. 16.7 is the figure in FY2025 AR p.128; it is not a schema
+    # field because `finance_costs` bundles it with RCF interest.
+    assert fy2024_closing_liability * LEASE_DISCOUNT_RATE == pytest.approx(16.7, abs=0.05)
+    # Comfortably below total reported finance costs, which include the RCF
+    # and an exceptional — a sanity bound derived from the schema itself.
+    assert fy2024_closing_liability * LEASE_DISCOUNT_RATE < fy2025.finance_costs.value
+    assert LEASE_DISCOUNT_RATE < BASE.cost_of_debt
 
 
 def test_rou_asset_and_liability_stay_within_historical_band():

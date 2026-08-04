@@ -104,6 +104,12 @@ HIST_DIVIDEND_PAYOUT = tuple(
     y.dividends_paid.value / ni for y, ni in zip(GREGGS_HISTORICALS, HIST_NET_INCOME)
 )
 HIST_CAPEX_PCT_REVENUE = tuple(y.capex.value / y.revenue.value for y in GREGGS_HISTORICALS)
+# Kept as descriptive statistics of the observed range, and used to anchor
+# the FIRST forecast year. They are explicitly NOT a bound on the terminal
+# year: all three historical years sit inside the distribution-centre build
+# programme, so [HIST_CAPEX_LOW, HIST_CAPEX_HIGH] is an expansion-phase
+# range, and constraining a steady-state assumption to it assumes the
+# expansion never ends. See BASE.capex_pct_revenue below.
 HIST_CAPEX_LOW = min(HIST_CAPEX_PCT_REVENUE)
 HIST_CAPEX_HIGH = max(HIST_CAPEX_PCT_REVENUE)
 HIST_ROU_ADDITIONS_PCT_REVENUE = tuple(
@@ -155,25 +161,57 @@ BASE = Drivers(
     opex_pct_revenue=(0.4513, 0.4480, 0.4460, 0.4445, 0.4430),
 
     # Year 1 anchored exactly to HIST_CAPEX_PCT_REVENUE[-1] (FY2025 actual,
-    # 13.27%, also HIST_CAPEX_HIGH). HIST_CAPEX_PCT_REVENUE rose across
-    # FY2023-25 through the Derby/Kettering/Balliol Park distribution-centre
-    # build programme, from HIST_CAPEX_LOW (FY2023, 10.95%) to
-    # HIST_CAPEX_HIGH. Base case tapers to 11.00% by FY2030 — just above
-    # HIST_CAPEX_LOW, i.e. inside the historical range, not below it — as
-    # that programme completes: the DC build moderates capex intensity but
-    # doesn't eliminate the ongoing store/estate capex sitting under it.
-    # This is the terminal-year driver that FCF gets capitalised on in
-    # perpetuity, so ending below HIST_CAPEX_LOW (as an earlier draft did,
-    # at 8.5%) would understate terminal value; owner ruling, see
-    # task-4-report.md fix log.
-    capex_pct_revenue=(0.1327, 0.1250, 0.1180, 0.1130, 0.1100),
+    # 13.27%, also HIST_CAPEX_HIGH), tapering to 7.00% by FY2030. The taper
+    # IS the story: the Derby/Kettering/Balliol Park distribution-centre
+    # programme that drove HIST_CAPEX_PCT_REVENUE up across FY2023-25 (from
+    # HIST_CAPEX_LOW, 10.95%, to HIST_CAPEX_HIGH, 13.27%) is completing, so
+    # capex intensity falls back to the level that merely sustains the
+    # estate. It is a programme finishing, not a permanent step-down in
+    # investment.
+    #
+    # The terminal figure is the one that matters, because it is the ratio
+    # FCF gets capitalised on in perpetuity, and it is derived rather than
+    # picked. In steady state with revenue growth g and depreciation rate d,
+    # a capex ratio c holds PP&E/revenue at
+    #     p = c * (1 + g) / (g + d)
+    # Inverting at the FY2025 actual PP&E/revenue (832.1 / 2151.2 = 38.7%),
+    # g = 4.5% terminal growth and d = ppe_depreciation_rate (14.23%):
+    #     c = 0.387 * (0.045 + 0.1423) / 1.045 = 6.94%, i.e. ~7.0%
+    # So 7.0% is exactly the capex intensity that keeps the asset base a
+    # constant share of sales. Holding capex at the previous 11.00% instead
+    # would drive PP&E/revenue to 61%+ in perpetuity — a business quietly
+    # assumed to keep getting more capital-intensive forever, with no
+    # revenue benefit modelled for it.
+    #
+    # This REVERSES the earlier ruling that terminal capex must stay inside
+    # [HIST_CAPEX_LOW, HIST_CAPEX_HIGH]. That ruling was wrong twice over.
+    # Its stated justification — that ending below HIST_CAPEX_LOW "would
+    # understate terminal value" — has the sign backwards: lower capex means
+    # higher free cash flow and therefore a HIGHER terminal value, so the
+    # old constraint was inflating capex against the model's own interest,
+    # not guarding against it. And the bound itself was never valid: all
+    # three historical years sit inside the DC build programme, so the
+    # historical range is an expansion-phase range. Bounding a terminal
+    # steady-state assumption by it assumes the expansion never ends.
+    capex_pct_revenue=(0.1327, 0.1200, 0.1040, 0.0870, 0.0700),
 
     # Year 1 anchored (rounded) to HIST_ROU_ADDITIONS_PCT_REVENUE[-1]
     # (FY2025 actual, 3.48%). HIST_ROU_ADDITIONS_PCT_REVENUE was volatile
-    # across FY2023-25 (lumpy lease signings), so held near the recent level
-    # with a slight uptick consistent with Greggs' guided ~140-160 net new
-    # shops/year.
-    rou_additions_pct_revenue=(0.035, 0.037, 0.038, 0.040, 0.040),
+    # across FY2023-25 (3.89% / 7.14% / 3.48% — lumpy lease signings), so
+    # the path is held at the recent level rather than extrapolated, easing
+    # to a 3.40% terminal as the shop estate matures and net new openings
+    # slow: the same story the capex taper above tells, on the leased half
+    # of the estate.
+    #
+    # Unlike terminal capex, 3.40% is NOT the hold-flat level. Applying the
+    # same steady-state formula with d = rou_depreciation_rate (17.61%) and
+    # g = 4.5%, holding ROU/revenue at the FY2025 actual (413.0 / 2151.2 =
+    # 19.2%) would need 4.06%. At 3.40% the ROU book instead drifts down to
+    # ~16.1% of revenue by the terminal year. That is deliberate — a
+    # maturing estate signs proportionally fewer new leases, and it is the
+    # conservative direction for the lease liability — but it is a
+    # judgement, not a derivation, and is stated as such.
+    rou_additions_pct_revenue=(0.035, 0.035, 0.035, 0.034, 0.034),
 
     # Anchored to HIST_INVENTORY_DAYS[-1] (FY2025 actual, ~24.5 days),
     # broadly stable across FY2023-25; held flat.
@@ -252,9 +290,10 @@ BASE = Drivers(
     dividend_payout_ratio=0.50,
 )
 
-# Base's terminal capex staying within [HIST_CAPEX_LOW, HIST_CAPEX_HIGH] is
-# covered by test_base_terminal_capex_within_historical_range in
-# tests/test_assumptions.py, not by an assert here — see that file for why.
+# What the capex paths must satisfy is covered by
+# test_terminal_capex_holds_ppe_to_revenue_near_the_last_actual and
+# test_capex_paths_are_ordered_bull_above_base_above_bear in
+# tests/test_assumptions.py, not by asserts here — see that file for why.
 
 
 def _scenario(
@@ -270,9 +309,10 @@ def _scenario(
     """Derive a scenario by shifting operating drivers off the base case.
 
     capex_pct_revenue is either a uniform capex_delta applied to every year
-    of the base path, or an explicit tuple supplied by the caller (used for
-    Bear, whose capex path is a floored uniform shift — see the comment
-    beside BEAR_CAPEX_PCT_REVENUE below).
+    of the base path, or an explicit tuple supplied by the caller. Both
+    Bear and Bull now use a uniform delta; the explicit-tuple path is kept
+    because the scenario capex paths are the assumption most likely to need
+    a bespoke shape later, and because it costs nothing.
     """
     if capex_pct_revenue is None:
         if capex_delta is None:
@@ -288,52 +328,53 @@ def _scenario(
     )
 
 
-# Bear capex path: what it plainly is — Base minus 100bp/year, eased until
-# it reaches HIST_CAPEX_LOW, then held there. Not an independently derived
-# path, just that rule applied and stated honestly:
-#
-# Applying capex_delta=-0.010 to every year of BASE.capex_pct_revenue
-# uniformly gives (12.27%, 11.50%, 10.80%, 10.30%, 10.00%). Three of those
-# five years — FY2028, FY2029 and FY2030 — fall below HIST_CAPEX_LOW
-# (10.95%). A bear-case terminal capex ratio below the historical low
-# mechanically inflates terminal FCF, which would partly undercut the
-# stress this scenario is meant to depict — the same terminal-value
-# reasoning that governs BASE's capex path above.
-#
-# So the first two years keep the uniform -100bp shift (12.27%, 11.50%: a
-# slower store rollout under demand/cost pressure is a reasonable near-term
-# stress read), and FY2028 onward is floored at HIST_CAPEX_LOW instead of
-# continuing to taper down. The result is still below Base in every
-# forecast year (tighter capex discipline than Base), just never below the
-# level Greggs has actually run at historically.
-#
-# Bear capex never falling below HIST_CAPEX_LOW is covered by
-# test_bear_capex_never_below_historical_low in tests/test_assumptions.py,
-# not by an assert here — see that file for why.
-BEAR_CAPEX_PCT_REVENUE = (0.1227, 0.1150, 0.1095, 0.1095, 0.1095)
+# The rule that floored Bear's capex at HIST_CAPEX_LOW is void. Its premise
+# was that a terminal capex ratio below the historical low "mechanically
+# inflates terminal FCF" and so understates the stress — the same
+# expansion-phase fallacy corrected in BASE.capex_pct_revenue above. Bear
+# and Bull are now both plain uniform shifts off the Base path, and each
+# terminal level is checked against the same steady-state test Base is.
 
 SCENARIOS = {
     # Consumer-slowdown / cost-inflation case: growth decelerates further,
     # gross margin compresses under input-cost pressure, opex ratio worsens
-    # (less operating leverage), capex intensity eases but is floored at
-    # HIST_CAPEX_LOW rather than falling below it (see BEAR_CAPEX_PCT_REVENUE
-    # above), and the exit multiple de-rates.
+    # (less operating leverage), capex intensity runs 100bp below Base in
+    # every year, and the exit multiple de-rates.
+    #
+    # The -100bp capex shift is not just "Base, but less". Bear's terminal
+    # revenue growth is 1.5% against Base's 4.5%, and a slower-growing
+    # estate needs less investment to sustain itself: the steady-state
+    # formula in BASE.capex_pct_revenue at g = 1.5% gives
+    #     0.387 * (0.015 + 0.1423) / 1.015 = 6.00%
+    # which is precisely Base's 7.00% terminal less the 100bp shift. So
+    # Bear's terminal capex holds PP&E/revenue at the same FY2025 38.7% that
+    # Base's does; the two scenarios differ in growth and margin, not in how
+    # capital-intensive the business is assumed to become. Capex being lower
+    # in the bear case than the base case is what a genuine demand slowdown
+    # looks like, and the resulting FCF relief is real, not a modelling
+    # artefact to be suppressed.
     "Bear": _scenario(
         BASE,
         growth_delta=-0.03,
         margin_delta=-0.015,
         opex_delta=0.010,
-        capex_pct_revenue=BEAR_CAPEX_PCT_REVENUE,
+        capex_delta=-0.010,
         exit_ev_ebitda=8.5,
     ),
     "Base": BASE,
     # Continued strong footfall/expansion case: growth holds up better,
     # margin expands on scale/mix, opex ratio improves further with
-    # operating leverage, capex intensity rises with a faster rollout (a
-    # uniform +1.0pp over Base raises no floor/ceiling concern here, and
-    # keeps Bull's capex path strictly above Base's at every year, which is
-    # what funding faster growth than Base should imply), and the exit
-    # multiple re-rates up.
+    # operating leverage, capex intensity runs 100bp above Base in every
+    # year (funding faster growth than Base must cost more, not less), and
+    # the exit multiple re-rates up.
+    #
+    # By the same steady-state arithmetic, Bull's 7.0% terminal growth would
+    # need 0.387 * (0.07 + 0.1423) / 1.07 = 7.68% to hold PP&E/revenue flat,
+    # so the uniform +100bp (8.00%) sits ~30bp above the hold-flat level and
+    # lets the asset base grow a little faster than sales — to 40.3% of
+    # revenue against the FY2025 38.7%. That is the intended reading of a
+    # bull case: the estate is being built out ahead of the demand it is
+    # betting on, and the model pays for it.
     "Bull": _scenario(
         BASE,
         growth_delta=0.025,

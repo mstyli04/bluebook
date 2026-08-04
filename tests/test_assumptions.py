@@ -3,6 +3,7 @@ import pytest
 from bluebook.assumptions import FORECAST_YEARS, SCENARIOS
 
 
+
 def test_five_forecast_years():
     assert len(FORECAST_YEARS) == 5
 
@@ -77,22 +78,118 @@ def test_base_case_year_one_ebit_margin_tracks_last_actual():
 
 
 # --- Capex path bounds -------------------------------------------------------
-# These were previously enforced by module-level asserts in assumptions.py.
-# Moved here because (1) `python -O` strips bare asserts, so an import-time
-# assert silently stops checking anything under optimised execution, and
-# (2) a failing import-time assert surfaces as an opaque crash on `import
+# These live here rather than as module-level asserts in assumptions.py
+# because (1) `python -O` strips bare asserts, so an import-time assert
+# silently stops checking anything under optimised execution, and (2) a
+# failing import-time assert surfaces as an opaque crash on `import
 # bluebook.assumptions` for any downstream task, with no test name and
-# nothing useful in pytest output. Both assert against the derived
-# HIST_CAPEX_LOW / HIST_CAPEX_HIGH constants, not hardcoded figures, so they
-# can't go stale relative to GREGGS_HISTORICALS either.
+# nothing useful in pytest output. Every comparator is derived from
+# GREGGS_HISTORICALS, not hardcoded, so none can go stale relative to the
+# filings.
+#
+# They REPLACE two earlier tests — test_base_terminal_capex_within_
+# historical_range and test_bear_capex_never_below_historical_low — which
+# asserted that terminal capex stays inside [HIST_CAPEX_LOW,
+# HIST_CAPEX_HIGH]. That bound was invalid: all three historical years sit
+# inside the distribution-centre build programme, so the historical range
+# is an expansion-phase range, and requiring a terminal steady-state
+# assumption to live inside it assumes the expansion never ends. The tests
+# below assert the thing that bound was a bad proxy for — that the terminal
+# capex ratio implies a sane long-run asset intensity, and that the
+# resulting terminal cash flow is actually positive.
 
-def test_base_terminal_capex_within_historical_range():
-    from bluebook.assumptions import HIST_CAPEX_HIGH, HIST_CAPEX_LOW
 
-    assert HIST_CAPEX_LOW <= SCENARIOS["Base"].capex_pct_revenue[-1] <= HIST_CAPEX_HIGH
+def _steady_state_asset_ratio(capex_pct: float, growth: float, depreciation_rate: float) -> float:
+    """Long-run asset/revenue ratio implied by a capex ratio.
+
+    With asset base A, revenue R, capex ratio c and depreciation rate d,
+    A_t = A_(t-1)(1 - d) + c*R_t. Holding A/R = p and R growing at g:
+        p = p(1 - d)/(1 + g) + c   ->   p = c(1 + g)/(g + d)
+    """
+    return capex_pct * (1 + growth) / (growth + depreciation_rate)
 
 
-def test_bear_capex_never_below_historical_low():
-    from bluebook.assumptions import HIST_CAPEX_LOW
+def _fy2025_ppe_to_revenue() -> float:
+    from bluebook.inputs.greggs import GREGGS_HISTORICALS
 
-    assert min(SCENARIOS["Bear"].capex_pct_revenue) >= HIST_CAPEX_LOW
+    y = GREGGS_HISTORICALS[-1]
+    return y.ppe.value / y.revenue.value
+
+
+@pytest.mark.parametrize("name", ["Bear", "Base", "Bull"])
+def test_terminal_capex_holds_ppe_to_revenue_near_the_last_actual(name: str):
+    """Terminal capex is the ratio capitalised in perpetuity, so what it has
+    to be defensible against is the asset intensity it implies forever —
+    not the range observed during a build programme.
+
+    The FY2025 actual PP&E/revenue is ~38.7%. A terminal capex ratio that
+    implies a wildly different steady state is asserting, silently, that the
+    business becomes structurally more (or less) capital-intensive than it
+    has ever been. The 5pp band is deliberately wide enough to allow a
+    genuine scenario difference — Bull does build ahead of demand — and
+    narrow enough to catch the previous 11.00% terminal, which implied 61%+.
+    """
+    drivers = SCENARIOS[name]
+    implied = _steady_state_asset_ratio(
+        drivers.capex_pct_revenue[-1],
+        drivers.revenue_growth[-1],
+        drivers.ppe_depreciation_rate,
+    )
+    actual = _fy2025_ppe_to_revenue()
+    assert abs(implied - actual) <= 0.05, (
+        f"{name} terminal capex of {drivers.capex_pct_revenue[-1]:.2%} implies a "
+        f"steady-state PP&E/revenue of {implied:.1%} against the FY2025 actual "
+        f"{actual:.1%}"
+    )
+
+
+def test_capex_paths_are_ordered_bull_above_base_above_bear():
+    """Funding faster growth must cost more, in every year. This is the
+    ordering the old Bear floor broke once Bear's path hit HIST_CAPEX_LOW.
+    """
+    bear, base, bull = SCENARIOS["Bear"], SCENARIOS["Base"], SCENARIOS["Bull"]
+    for i, year in enumerate(FORECAST_YEARS):
+        assert bear.capex_pct_revenue[i] < base.capex_pct_revenue[i], year
+        assert base.capex_pct_revenue[i] < bull.capex_pct_revenue[i], year
+
+
+def test_capex_tapers_from_the_last_actual_rather_than_stepping_down():
+    """The taper is the story — a build programme completing — so year one
+    stays at the FY2025 actual and the decline is monotonic from there. A
+    scenario that jumped straight to the terminal ratio would be claiming
+    the programme stopped the day the forecast starts.
+    """
+    from bluebook.assumptions import HIST_CAPEX_PCT_REVENUE
+
+    for name, drivers in SCENARIOS.items():
+        path = drivers.capex_pct_revenue
+        assert path[0] > path[-1], name
+        assert all(a >= b for a, b in zip(path, path[1:])), f"{name} not monotonic: {path}"
+    assert SCENARIOS["Base"].capex_pct_revenue[0] == pytest.approx(
+        HIST_CAPEX_PCT_REVENUE[-1], abs=0.0005
+    )
+
+
+@pytest.mark.parametrize("name", ["Bear", "Base", "Bull"])
+def test_terminal_unlevered_free_cash_flow_is_positive(name: str):
+    """The test that actually protects the valuation.
+
+    A terminal year whose unlevered FCF is negative would be capitalised
+    into a negative terminal value, and no amount of reasoning about capex
+    ranges saves a DCF from that. Uses the full linked model rather than
+    driver arithmetic, so it also catches a lease or working-capital path
+    that consumes the cash the capex taper frees up.
+    """
+    from bluebook.inputs.greggs import GREGGS_HISTORICALS
+    from bluebook.reference import build_model
+
+    drivers = SCENARIOS[name]
+    m = build_model(GREGGS_HISTORICALS, drivers)
+    ufcf = (
+        m.ebit[-1] * (1 - drivers.tax_rate)
+        + m.da_total[-1]
+        - m.cash_flow["capex"][-1]
+        - m.leases.additions[-1]
+        - m.working_capital.change_in_nwc[-1]
+    )
+    assert ufcf > 0, f"{name} terminal unlevered FCF is {ufcf:.1f}"

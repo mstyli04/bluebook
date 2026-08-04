@@ -149,7 +149,7 @@ def test_year_one_working_capital_movement_uses_the_actual_opening_balances(name
 def test_first_forecast_year_rolls_off_the_last_historical_balance_sheet(model):
     """Every opening balance is the last actual, not a fresh start."""
     assert model.balance_sheet["ppe"][0] == pytest.approx(
-        LAST.ppe.value + model.cash_flow["capex"][0]
+        LAST.ppe.value + model.cash_flow["capex_ppe"][0]
         - model.income_statement["depreciation_ppe"][0],
         abs=1e-9,
     )
@@ -164,7 +164,10 @@ def test_first_forecast_year_rolls_off_the_last_historical_balance_sheet(model):
         abs=1e-9,
     )
     assert model.balance_sheet["intangibles"][0] == pytest.approx(
-        LAST.intangibles.value - model.income_statement["amortisation"][0], abs=1e-9
+        LAST.intangibles.value
+        + model.cash_flow["capex_intangible"][0]
+        - model.income_statement["amortisation"][0],
+        abs=1e-9,
     )
     assert model.balance_sheet["equity"][0] == pytest.approx(
         LAST.equity.value + model.net_income[0] - model.cash_flow["dividends_paid"][0],
@@ -230,14 +233,60 @@ def test_finance_costs_carry_lease_interest_as_well_as_debt_interest(model):
 
 
 @pytest.mark.parametrize("name", SCENARIO_NAMES)
-def test_amortisation_is_a_constant_share_of_revenue_from_the_last_actual(name: str):
+def test_amortisation_is_charged_on_opening_intangibles(name: str):
+    """Both sides of the intangibles roll-forward run off the asset balance.
+
+    Amortisation was previously a share of revenue while additions accrued
+    off the balance, so the two sides drifted apart and the balance had no
+    economic meaning. The rate is anchored on the last actual, exactly as
+    ppe_depreciation_rate and rou_depreciation_rate are.
+    """
     m = build_model(GREGGS_HISTORICALS, SCENARIOS[name])
-    rate = LAST.amortisation.value / LAST.revenue.value
+    rate = LAST.amortisation.value / GREGGS_HISTORICALS[-2].intangibles.value
+    opening = [LAST.intangibles.value, *m.balance_sheet["intangibles"][:-1]]
     for i in range(5):
         assert m.income_statement["amortisation"][i] == pytest.approx(
-            m.income_statement["revenue"][i] * rate, abs=1e-9
+            opening[i] * rate, abs=1e-9
         )
-        assert m.balance_sheet["intangibles"][i] > 0
+        assert m.balance_sheet["intangibles"][i] == pytest.approx(
+            opening[i] + m.cash_flow["capex_intangible"][i]
+            - m.income_statement["amortisation"][i],
+            abs=1e-9,
+        )
+
+
+@pytest.mark.parametrize("name", SCENARIO_NAMES)
+def test_intangibles_stay_near_their_historical_share_of_revenue(name: str):
+    """The check that the two derived intangible rates are mutually
+    coherent. FY2025 intangibles are 2.0% of revenue; a capex share and an
+    amortisation rate that disagree about the life of the asset would send
+    the balance somewhere else entirely — the earlier revenue-based
+    amortisation ran it down to 0.6% of revenue, and a split without the
+    matching rate change ran it up to 4.5%.
+    """
+    m = build_model(GREGGS_HISTORICALS, SCENARIOS[name])
+    actual_share = LAST.intangibles.value / LAST.revenue.value
+    for i in range(5):
+        share = m.balance_sheet["intangibles"][i] / m.income_statement["revenue"][i]
+        assert abs(share - actual_share) <= 0.01, f"{name} year {i}: {share:.2%}"
+
+
+@pytest.mark.parametrize("name", SCENARIO_NAMES)
+def test_capex_splits_between_ppe_and_intangibles_without_leaking(name: str):
+    """The split must add back to the total, or the balance sheet is out by
+    the difference: the cash flow reports the total while the fixed-asset
+    schedule only ever sees the PP&E share.
+    """
+    m = build_model(GREGGS_HISTORICALS, SCENARIOS[name])
+    drivers = SCENARIOS[name]
+    for i in range(5):
+        assert m.cash_flow["capex"][i] == pytest.approx(
+            m.cash_flow["capex_ppe"][i] + m.cash_flow["capex_intangible"][i], abs=1e-9
+        )
+        assert m.cash_flow["capex"][i] == pytest.approx(
+            m.income_statement["revenue"][i] * drivers.capex_pct_revenue[i], abs=1e-9
+        )
+        assert m.cash_flow["capex_intangible"][i] < m.cash_flow["capex_ppe"][i]
 
 
 @pytest.mark.parametrize("name", SCENARIO_NAMES)
@@ -249,10 +298,36 @@ def test_tax_and_dividends_are_consistent_between_the_three_statements(name: str
             m.income_statement["tax"][i], abs=1e-9
         )
         assert m.income_statement["tax"][i] == pytest.approx(
-            m.income_statement["profit_before_tax"][i] * drivers.tax_rate, abs=1e-9
+            max(m.income_statement["profit_before_tax"][i], 0.0) * drivers.tax_rate,
+            abs=1e-9,
         )
         assert m.cash_flow["dividends_paid"][i] == pytest.approx(
-            m.net_income[i] * drivers.dividend_payout_ratio, abs=1e-9
+            max(m.net_income[i], 0.0) * drivers.dividend_payout_ratio, abs=1e-9
+        )
+
+
+def test_a_loss_making_year_neither_collects_tax_nor_pays_a_dividend():
+    """Under a deep enough stress the model must not book cash arriving from
+    HMRC and from shareholders. No NOL carryforward is modelled, so a loss
+    simply attracts no charge.
+    """
+    from dataclasses import replace
+
+    base = SCENARIOS["Base"]
+    wipeout = replace(base, gross_margin=tuple(m - 0.14 for m in base.gross_margin))
+    m = build_model(GREGGS_HISTORICALS, wipeout)
+    assert min(m.net_income) < 0, "stress case did not actually produce a loss"
+    for i in range(5):
+        assert m.income_statement["tax"][i] >= 0.0
+        assert m.cash_flow["dividends_paid"][i] >= 0.0
+        if m.income_statement["profit_before_tax"][i] < 0:
+            assert m.income_statement["tax"][i] == 0.0
+        if m.net_income[i] < 0:
+            assert m.cash_flow["dividends_paid"][i] == 0.0
+    # And it still balances when the floors bind.
+    for i in range(5):
+        assert m.balance_sheet["total_assets"][i] == pytest.approx(
+            m.balance_sheet["total_liabilities_and_equity"][i], abs=0.01
         )
 
 
