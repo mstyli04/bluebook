@@ -620,6 +620,26 @@ revenue). Anchor year-one values to the most recent actual, then let them drift 
 forecast only where you can state a reason. Write the actual historical ratio in a comment
 beside every driver you set, so a reader can see what it was anchored to.
 
+> **As-built correction (2026-08-04) — terminal capex.** An earlier ruling required capex to
+> stay within the historical range and land near 11% of revenue. **That ruling was wrong and has
+> been reversed.** Its stated justification — that ending below the historical low "would
+> understate terminal value" — has the sign backwards: lower capex raises free cash flow and
+> therefore raises terminal value. Worse, all three historical years sit inside an active
+> distribution-centre build, so the historical range is an *expansion-phase* range and is not a
+> valid bound on a *terminal* assumption. Capex at 11% implies a steady-state PP&E/revenue of
+> 61-69% against Greggs' actual 38.7%, and a historical capex/depreciation ratio of ~3.0x.
+>
+> Measured consequence: terminal unlevered FCF of -£15.5m (Bear), giving a **negative enterprise
+> value**; negative implied equity in the Base case; and Gordon-growth versus exit-multiple
+> terminal values disagreeing by 8.4x. The model also drew a revolver to £334m against Greggs'
+> actual £100m facility, with cash pinned at the minimum in all 15 forecast years.
+>
+> **Corrected:** terminal capex ~7.0% of revenue, terminal ROU additions ~3.4%. Three independent
+> derivations (asset intensity, reinvestment rate = g/ROIC, and re-running the model) converge
+> there, and all three symptoms clear simultaneously — ~£16/share and ~£96m drawn, inside the
+> real facility. The two tests bounding terminal capex by the historical range encode the
+> expansion-phase fallacy and must be replaced, not satisfied.
+
 Market-rate drivers (risk-free rate, equity risk premium, beta, cost of debt) come from
 outside the filings; state the basis for each in a comment. Where a driver is deliberately
 set away from its historical anchor, say why in the comment — the calibration tests permit
