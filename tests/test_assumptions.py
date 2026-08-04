@@ -74,3 +74,25 @@ def test_base_case_year_one_ebit_margin_tracks_last_actual():
         f"base-case year-1 EBIT margin {implied:.1%} diverges from "
         f"FY2025 actual {actual['ebit_margin']:.1%} by more than 150bp"
     )
+
+
+# --- Capex path bounds -------------------------------------------------------
+# These were previously enforced by module-level asserts in assumptions.py.
+# Moved here because (1) `python -O` strips bare asserts, so an import-time
+# assert silently stops checking anything under optimised execution, and
+# (2) a failing import-time assert surfaces as an opaque crash on `import
+# bluebook.assumptions` for any downstream task, with no test name and
+# nothing useful in pytest output. Both assert against the derived
+# HIST_CAPEX_LOW / HIST_CAPEX_HIGH constants, not hardcoded figures, so they
+# can't go stale relative to GREGGS_HISTORICALS either.
+
+def test_base_terminal_capex_within_historical_range():
+    from bluebook.assumptions import HIST_CAPEX_HIGH, HIST_CAPEX_LOW
+
+    assert HIST_CAPEX_LOW <= SCENARIOS["Base"].capex_pct_revenue[-1] <= HIST_CAPEX_HIGH
+
+
+def test_bear_capex_never_below_historical_low():
+    from bluebook.assumptions import HIST_CAPEX_LOW
+
+    assert min(SCENARIOS["Bear"].capex_pct_revenue) >= HIST_CAPEX_LOW

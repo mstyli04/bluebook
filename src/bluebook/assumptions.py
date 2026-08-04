@@ -98,14 +98,6 @@ HIST_GROSS_MARGIN = tuple(
 HIST_OPEX_PCT_REVENUE = tuple(
     y.operating_costs.value / y.revenue.value for y in GREGGS_HISTORICALS
 )
-HIST_DA_PCT_REVENUE = tuple(
-    (y.depreciation_ppe.value + y.depreciation_rou.value + y.amortisation.value) / y.revenue.value
-    for y in GREGGS_HISTORICALS
-)
-HIST_EBIT_MARGIN = tuple(
-    gm - opex - da
-    for gm, opex, da in zip(HIST_GROSS_MARGIN, HIST_OPEX_PCT_REVENUE, HIST_DA_PCT_REVENUE)
-)
 HIST_EFFECTIVE_TAX_RATE = tuple(y.tax_expense.value / _pbt(y) for y in GREGGS_HISTORICALS)
 HIST_NET_INCOME = tuple(_pbt(y) - y.tax_expense.value for y in GREGGS_HISTORICALS)
 HIST_DIVIDEND_PAYOUT = tuple(
@@ -260,11 +252,9 @@ BASE = Drivers(
     dividend_payout_ratio=0.50,
 )
 
-# Sanity checks: keep the capex anchors above from silently drifting out of
-# the historical range they're reasoned about. These run at import time.
-assert HIST_CAPEX_LOW <= BASE.capex_pct_revenue[-1] <= HIST_CAPEX_HIGH, (
-    "Base terminal capex must stay within the historical range"
-)
+# Base's terminal capex staying within [HIST_CAPEX_LOW, HIST_CAPEX_HIGH] is
+# covered by test_base_terminal_capex_within_historical_range in
+# tests/test_assumptions.py, not by an assert here — see that file for why.
 
 
 def _scenario(
@@ -316,11 +306,11 @@ def _scenario(
 # continuing to taper down. The result is still below Base in every
 # forecast year (tighter capex discipline than Base), just never below the
 # level Greggs has actually run at historically.
+#
+# Bear capex never falling below HIST_CAPEX_LOW is covered by
+# test_bear_capex_never_below_historical_low in tests/test_assumptions.py,
+# not by an assert here — see that file for why.
 BEAR_CAPEX_PCT_REVENUE = (0.1227, 0.1150, 0.1095, 0.1095, 0.1095)
-
-assert HIST_CAPEX_LOW <= min(BEAR_CAPEX_PCT_REVENUE), (
-    "Bear-case capex must never fall below the historical low"
-)
 
 SCENARIOS = {
     # Consumer-slowdown / cost-inflation case: growth decelerates further,
