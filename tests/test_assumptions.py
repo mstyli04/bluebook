@@ -133,38 +133,116 @@ def _fy2025_ppe_to_revenue() -> float:
     return y.ppe.value / y.revenue.value
 
 
+_CONVERGENCE_YEARS = 200
+
+
+def _iterated_steady_state_ppe_to_revenue(name: str) -> tuple[float, float]:
+    """Run the REAL fixed-asset schedule to convergence at terminal drivers.
+
+    Feeds ``fixed_assets()`` a constant-growth revenue path 200 years long
+    at the scenario's terminal growth rate and terminal capex ratio, routed
+    through ``HIST_PPE_CAPEX_SHARE`` exactly as ``reference.py`` routes it,
+    and returns (converged PP&E/revenue, last year-on-year move in it).
+
+    Deliberately starts from opening PP&E of ZERO. The FY2025 actual opening
+    balance is already at the anchor being tested, so starting there would
+    let a wrong capex ratio hide inside a right starting point; starting at
+    zero makes the answer a pure function of the drivers. The roll-forward
+    contracts by (1 - d)/(1 + g) ~ 0.80-0.82 per year, so 200 years is ~1e19
+    of convergence — the returned move is asserted to confirm it, rather
+    than assumed.
+
+    Revenue starts at 1.0 because PP&E/revenue is scale-free; only the
+    growth rate matters.
+    """
+    from dataclasses import replace
+
+    from bluebook.assumptions import HIST_PPE_CAPEX_SHARE
+    from bluebook.schedules.fixed_assets import fixed_assets
+
+    drivers = SCENARIOS[name]
+    growth = drivers.revenue_growth[-1]
+    revenue = [(1.0 + growth) ** (i + 1) for i in range(_CONVERGENCE_YEARS)]
+    ppe_drivers = replace(
+        drivers,
+        capex_pct_revenue=(
+            drivers.capex_pct_revenue[-1] * HIST_PPE_CAPEX_SHARE,
+        )
+        * _CONVERGENCE_YEARS,
+    )
+    schedule = fixed_assets(0.0, revenue, ppe_drivers)
+    ratios = [p / r for p, r in zip(schedule.closing_ppe, revenue)]
+    return ratios[-1], abs(ratios[-1] - ratios[-2])
+
+
 @pytest.mark.parametrize("name", ["Bear", "Base", "Bull"])
-def test_terminal_capex_holds_ppe_to_revenue_near_the_last_actual(name: str):
+def test_terminal_capex_holds_ppe_to_revenue_when_the_schedule_is_iterated(name: str):
     """Terminal capex is the ratio capitalised in perpetuity, so what it has
     to be defensible against is the asset intensity it implies forever —
-    not the range observed during a build programme.
+    not the range observed during a build programme. The FY2025 actual
+    PP&E/revenue is ~38.7%; a terminal capex ratio implying a materially
+    different steady state is asserting, silently, that the business becomes
+    structurally more (or less) capital-intensive than it has ever been.
 
-    The FY2025 actual PP&E/revenue is ~38.7%. A terminal capex ratio that
-    implies a wildly different steady state is asserting, silently, that the
-    business becomes structurally more (or less) capital-intensive than it
-    has ever been. The 5pp band is wide enough to allow a genuine scenario
-    difference and narrow enough to catch the pre-round-1 11.00% terminal,
-    which implies 57%+ once the split is accounted for — a mutation this
-    test is checked against, not merely assumed to catch.
+    This measures that steady state by ITERATING ``fixed_assets()`` forward
+    to convergence, not by re-deriving p = c(1 + g)/(g + d). That is the
+    whole point of the test. The previous version of it evaluated the same
+    closed form, with the same derived constants, as the driver comment it
+    was checking — algebraically one assertion with two tolerances — so when
+    the derivation itself was wrong (the 7.00% ungrossed terminal), the test
+    reproduced the error and passed. A test that shares its subject's
+    assumptions cannot catch that class of defect. Running the real schedule
+    shares no assumption with the formula beyond the drivers themselves.
 
-    Grossed up by HIST_PPE_CAPEX_SHARE, because only that share of
-    capex_pct_revenue reaches PP&E. Without it the test reproduces the same
-    unsplit formula as the driver derivation and cannot see the error.
+    The tight closed-form test below is kept alongside it deliberately: this
+    one checks the implementation, that one checks the derivation, and if
+    the two ever disagree that is a finding, not noise.
+
+    The 1pp band is ~18x the widest drift the committed drivers actually
+    produce (5.6bp, Bull) and is checked against two mutations rather than
+    assumed to catch them: terminal capex reverted to the 7.00% ungrossed
+    figure (2.1pp of drift) and HIST_PPE_CAPEX_SHARE forced to 1.0 (2.7pp).
+    Both fail it. The pre-round-1 11.00% terminal (19pp) fails it by miles.
+    """
+    converged, last_move = _iterated_steady_state_ppe_to_revenue(name)
+    assert last_move < 1e-9, (
+        f"{name}: the iterated PP&E schedule had not converged after "
+        f"{_CONVERGENCE_YEARS} years — last move {last_move:.2e}"
+    )
+    actual = _fy2025_ppe_to_revenue()
+    assert abs(converged - actual) <= 0.01, (
+        f"{name} terminal capex of {SCENARIOS[name].capex_pct_revenue[-1]:.2%} drives "
+        f"the fixed-asset schedule to a steady-state PP&E/revenue of {converged:.2%} "
+        f"against the FY2025 actual {actual:.2%}"
+    )
+
+
+@pytest.mark.parametrize("name", ["Bear", "Base", "Bull"])
+def test_iterated_schedule_agrees_with_the_closed_form_it_is_derived_from(name: str):
+    """Cross-check: the algebra and the code must describe the same thing.
+
+    The drivers are derived from p = c(1 + g)/(g + d), which assumes the
+    schedule rolls forward as A_t = A_(t-1)(1 - d) + c*R_t with depreciation
+    struck on the OPENING balance. ``fixed_assets()`` is free to change; if
+    it ever stops matching that recurrence — depreciating the closing
+    balance, say, or capitalising mid-year — every terminal driver in this
+    module silently becomes the wrong answer to a question nobody restated.
+    This is the test that would say so.
     """
     from bluebook.assumptions import HIST_PPE_CAPEX_SHARE
 
+    converged, _ = _iterated_steady_state_ppe_to_revenue(name)
     drivers = SCENARIOS[name]
-    implied = _steady_state_asset_ratio(
+    closed_form = _steady_state_asset_ratio(
         drivers.capex_pct_revenue[-1],
         drivers.revenue_growth[-1],
         drivers.ppe_depreciation_rate,
         share_reaching_asset=HIST_PPE_CAPEX_SHARE,
     )
-    actual = _fy2025_ppe_to_revenue()
-    assert abs(implied - actual) <= 0.05, (
-        f"{name} terminal capex of {drivers.capex_pct_revenue[-1]:.2%} implies a "
-        f"steady-state PP&E/revenue of {implied:.1%} against the FY2025 actual "
-        f"{actual:.1%}"
+    assert converged == pytest.approx(closed_form, rel=1e-9), (
+        f"{name}: iterating fixed_assets() converges to {converged:.6%} but the "
+        f"closed form the drivers are derived from says {closed_form:.6%} — the "
+        f"schedule and the derivation no longer describe the same roll-forward"
     )
 
 
@@ -174,13 +252,19 @@ def test_terminal_capex_equals_its_own_grossed_up_sustaining_level(name: str):
     full, from GREGGS_HISTORICALS — so the stated derivation and the tuple
     cannot disagree.
 
-    The looser steady-state test above tolerates 5pp of drift, which is the
-    right band for "is this ratio sane" but wide enough that the driver
-    could sit a long way off its own stated derivation and still pass. This
-    one is tight: each scenario's terminal must be the sustaining level at
-    its OWN terminal growth, grossed up for the intangible split, to within
-    5bp of rounding. It is the test that catches a comment claiming 7.41%
+    The iterated test above measures where the schedule actually settles and
+    allows 1pp of drift, which is the right band for "is this ratio sane"
+    but still wide enough that a driver could sit ~80-105bp off its own
+    stated derivation and pass. This one is tight: each scenario's terminal
+    must be the sustaining level at its OWN terminal growth, grossed up for
+    the intangible split, to within 5bp of rounding (the committed tuples
+    sit 0.4-1.2bp off). It is the test that catches a comment claiming 7.41%
     over a tuple that says 7.00%.
+
+    The two are not redundant. This one asks whether the number matches the
+    stated derivation; the iterated one asks whether the derivation matches
+    the model. Round 3's defect passed a test of the first kind that had
+    been written as though it were the second.
     """
     from bluebook.assumptions import HIST_PPE_CAPEX_SHARE
 
@@ -210,10 +294,14 @@ def test_terminal_rou_additions_hold_rou_to_revenue_near_the_last_actual(name: s
     Greggs runs one shop estate across two balance sheet lines. Setting
     terminal capex to hold PP&E/revenue flat while letting ROU/revenue drift
     would mean two asset bases under two different rules, which is exactly
-    the asymmetry this test exists to prevent. The band is tighter than the
-    capex one (1pp, not 5pp) because these terminals are derived directly
-    rather than shifted by a round delta; it still catches the previous
-    3.40% terminal, which implied 16.1% against a 19.2% actual.
+    the asymmetry this test exists to prevent. The 1pp band still catches
+    the previous 3.40% terminal, which implied 16.1% against a 19.2%
+    actual. This one evaluates the closed form directly rather than
+    iterating leases(): unlike capex, the whole of
+    rou_additions_pct_revenue reaches the ROU line, so there is no split for
+    a closed-form check to be blind to — and the ROU terminals are derived
+    directly rather than shifted, so it is the derivation that needs
+    policing here.
     """
     drivers = SCENARIOS[name]
     implied = _steady_state_asset_ratio(

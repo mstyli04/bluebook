@@ -135,9 +135,11 @@ def intangible_capex_share(historicals) -> float:
     consumes it, so the two cannot drift apart.
 
     Aggregated across every year that has a prior-year balance to roll off,
-    rather than taken from the latest year alone: FY2025's 7.74% is an
-    outlier (the year Greggs' intangible additions more than doubled), and
-    a terminal assumption should not inherit one year's spike.
+    rather than taken from the latest year alone: FY2025 on its own implies
+    7.99% (22.8 / 285.4) against this aggregate's 6.38%, the year Greggs'
+    intangible additions more than doubled (10.8 -> 22.8 implied, 10.9 ->
+    22.1 as reported), and a terminal assumption should not inherit one
+    year's spike.
 
     Implied additions = closing intangibles - opening intangibles +
     amortisation, because the schema carries only total capex. Reconciles to
@@ -234,7 +236,7 @@ BASE = Drivers(
     #     p = c_ppe * (1 + g) / (g + d)
     # Inverting at the FY2025 actual PP&E/revenue (832.1 / 2151.2 = 38.68%),
     # g = 4.5% terminal growth and d = ppe_depreciation_rate (14.23%):
-    #     c_ppe = 0.3868 * (0.045 + 0.1423) / 1.045 = 6.93%
+    #     c_ppe = 0.386807 * (0.045 + 0.1423) / 1.045 = 6.9329%
     #
     # But c_ppe is NOT the driver. capex_pct_revenue is a ratio of TOTAL
     # cash capex — PP&E plus intangible additions, the basis on which
@@ -242,20 +244,26 @@ BASE = Drivers(
     # HIST_PPE_CAPEX_SHARE (93.62%) of it into the fixed-asset schedule, the
     # rest going to intangibles. The sustaining requirement must therefore
     # be grossed up by 1 / HIST_PPE_CAPEX_SHARE:
-    #     c = 6.93% / (1 - 0.0638) = 7.41%
+    #     c = 6.9329% / 0.936158 = 7.4057%  ->  0.0741
     #
     # Both figures are named constants derived from GREGGS_HISTORICALS, not
     # literals, so the driver and the split cannot drift apart — see
     # intangible_capex_share() above and
-    # test_terminal_capex_holds_ppe_to_revenue_near_the_last_actual, which
-    # reproduces this whole derivation including the gross-up.
+    # test_terminal_capex_equals_its_own_grossed_up_sustaining_level, which
+    # reproduces this whole derivation including the gross-up. A second
+    # test, test_terminal_capex_holds_ppe_to_revenue_when_the_schedule_is_
+    # iterated, checks the same claim WITHOUT the closed form, by running
+    # fixed_assets() forward to convergence — because the 7.00% error below
+    # survived a round of review inside a test that re-derived the very
+    # formula it was meant to be auditing.
     #
     # An earlier round set this to 7.00%, which was the ungrossed c_ppe used
     # as if it were a total-capex ratio. That silently starved the PP&E line
-    # of the intangible share and drove true steady-state PP&E/revenue to
-    # 36.2%, ~2.4pp below the anchor the derivation claimed to hold. The
-    # error was invisible because the covering test reproduced the same
-    # unsplit formula.
+    # of the intangible share and drove Base's true steady-state
+    # PP&E/revenue to 36.56%, ~2.1pp below the anchor the derivation claimed
+    # to hold (Bear 36.24%, Bull 37.75%, on the same error). It was
+    # invisible because the covering test reproduced the same unsplit
+    # formula.
     #
     # Holding capex at the pre-round-1 11.00% instead would drive
     # PP&E/revenue to 57%+ in perpetuity — a business quietly assumed to
@@ -379,7 +387,8 @@ BASE = Drivers(
 )
 
 # What the capex and ROU-addition paths must satisfy is covered by
-# test_terminal_capex_holds_ppe_to_revenue_near_the_last_actual,
+# test_terminal_capex_holds_ppe_to_revenue_when_the_schedule_is_iterated,
+# test_terminal_capex_equals_its_own_grossed_up_sustaining_level,
 # test_terminal_rou_additions_hold_rou_to_revenue_near_the_last_actual and
 # test_investment_paths_are_ordered_bull_above_base_above_bear in
 # tests/test_assumptions.py, not by asserts here — see that file for why.
@@ -436,32 +445,36 @@ SCENARIOS = {
     #
     # The -100bp capex shift is not just "Base, but less". Bear's terminal
     # revenue growth is 1.5% against Base's 4.5%, and a slower-growing
-    # estate needs less investment to sustain itself: the steady-state
-    # formula in BASE.capex_pct_revenue at g = 1.5% gives
-    #     0.387 * (0.015 + 0.1423) / 1.015 = 6.00%
-    # which is precisely Base's 7.00% terminal less the 100bp shift. So
-    # Bear's terminal capex holds PP&E/revenue at the same FY2025 38.7% that
-    # Base's does; the two scenarios differ in growth and margin, not in how
-    # capital-intensive the business is assumed to become. Capex being lower
-    # in the bear case than the base case is what a genuine demand slowdown
-    # looks like, and the resulting FCF relief is real, not a modelling
-    # artefact to be suppressed.
-    #
-    # The -100bp is sized off the same grossed-up derivation as Base: at
-    # Bear's 1.5% terminal growth, sustaining PP&E/revenue at 38.68% needs
-    # c_ppe = 0.3868 * (0.015 + 0.1423) / 1.015 = 5.99%, which grossed up by
-    # 1 / HIST_PPE_CAPEX_SHARE is 6.40%. Base's terminal less 100bp gives
-    # 6.41% — within 1bp of Bear's own sustaining level.
+    # estate needs less investment to sustain itself. The shift is sized off
+    # the same grossed-up derivation as Base: at Bear's 1.5% terminal
+    # growth, sustaining PP&E/revenue at 38.68% needs
+    #     c_ppe = 0.386807 * (0.015 + 0.1423) / 1.015 = 5.995%
+    # which grossed up by 1 / HIST_PPE_CAPEX_SHARE is 6.403%. Base's
+    # terminal less 100bp gives 6.41% — 0.7bp above Bear's own sustaining
+    # level. So Bear's terminal capex holds PP&E/revenue at the same FY2025
+    # 38.7% that Base's does; the two scenarios differ in growth and margin,
+    # not in how capital-intensive the business is assumed to become. Capex
+    # being lower in the bear case than the base case is what a genuine
+    # demand slowdown looks like, and the resulting FCF relief is real, not
+    # a modelling artefact to be suppressed.
     #
     # ROU additions shift by -40bp on the same reasoning, and the size of
     # the shift is set the same way: holding ROU/revenue at the FY2025
     # 19.20% at Bear's 1.5% terminal growth needs
     #     0.1920 * (0.015 + 0.1761) / 1.015 = 3.61%
     # against Base's terminal 4.06%, a 45bp gap. A uniform -40bp lands
-    # Bear's terminal at 3.66%, within 5bp of its own hold-flat level, while
-    # keeping the path strictly below Base in every year. The shift is
-    # smaller than the capex shift (-100bp) because lease assets depreciate
-    # faster, so the same change in growth moves the sustaining rate less.
+    # Bear's terminal at 3.66%, 4.5bp above its own hold-flat level, while
+    # keeping the path strictly below Base in every year.
+    #
+    # The ROU shift is smaller in magnitude than the capex shift (-100bp)
+    # mainly because the leased asset base is about half the size of the
+    # owned one relative to revenue (19.20% against 38.68%). The sustaining
+    # ratio's sensitivity to growth, d(sust)/dg = p(1 - d)/(1 + g)^2, is
+    # proportional to p, so the same change in growth moves the ROU rate
+    # roughly half as far: ~14.5bp per pp of growth against ~32.5bp for
+    # capex. Faster lease depreciation does damp it further, but only via
+    # the (1 - d) factor, worth ~4% of the difference; the capex gross-up
+    # for the intangible split adds another ~7%.
     "Bear": _scenario(
         BASE,
         growth_delta=-0.03,
@@ -474,34 +487,54 @@ SCENARIOS = {
     "Base": BASE,
     # Continued strong footfall/expansion case: growth holds up better,
     # margin expands on scale/mix, opex ratio improves further with
-    # operating leverage, capex intensity runs 100bp above Base in every
+    # operating leverage, capex intensity runs 80bp above Base in every
     # year (funding faster growth than Base must cost more, not less), and
     # the exit multiple re-rates up.
     #
-    # The shift is +80bp rather than +100bp, and the asymmetry with Bear is
-    # derived, not a fudge. At Bull's 7.0% terminal growth, sustaining
-    # PP&E/revenue at 38.68% needs c_ppe = 0.3868 * (0.07 + 0.1423) / 1.07 =
-    # 7.67%, which grossed up by 1 / HIST_PPE_CAPEX_SHARE is 8.20%. Base's
-    # terminal plus 80bp gives 8.21%, within 1bp of Bull's own sustaining
-    # level; plus 100bp would have overshot it by ~20bp. The gap from Base
-    # is smaller than Bear's because the sustaining ratio is convex in
-    # growth — the same reason Bull's ROU shift (+40bp) is smaller in
-    # magnitude than the arithmetic gap suggests.
+    # The shift is +80bp rather than +100bp, and it is derived, not a fudge.
+    # At Bull's 7.0% terminal growth, sustaining PP&E/revenue at 38.68%
+    # needs c_ppe = 0.386807 * (0.07 + 0.1423) / 1.07 = 7.675%, which
+    # grossed up by 1 / HIST_PPE_CAPEX_SHARE is 8.198%. Base's terminal plus
+    # 80bp gives 8.21%, 1.2bp above Bull's own sustaining level; plus 100bp
+    # would have overshot it by ~21bp.
     #
-    # An earlier round used a symmetric +100bp and justified the ~30bp
-    # overshoot as a bull case "building ahead of demand". That reading is
-    # dropped: round 2 established the principle that each scenario lands on
-    # its own sustaining level, and applying it here rather than preserving
-    # a flourish keeps all six terminal points (capex and ROU, three
-    # scenarios) on one rule.
+    # Bull's +80bp gap from Base is smaller than Bear's 100bp gap almost
+    # entirely because the two scenarios' growth deltas are unequal: -3.0pp
+    # for Bear against +2.5pp for Bull. At the sustaining ratio's ~32.5bp
+    # per pp of growth around Base, that alone gives 97bp against 81bp.
+    # Curvature accounts for the remaining ~2-3bp, and it works the OPPOSITE
+    # way to the convexity an earlier round claimed. The sustaining ratio is
+    # strictly concave in growth:
+    #     sust(g) = (p / s) * [1 - (1 - d) / (1 + g)]
+    #     sust''(g) = -2 (p / s) (1 - d) / (1 + g)^3 < 0
+    # so the per-pp slope FALLS as growth rises — 33.4bp/pp across Bear's
+    # leg, 31.7bp/pp across Bull's. Concavity therefore trims a couple of
+    # bp off Bull's gap rather than explaining it; the unequal deltas do
+    # all the work.
+    #
+    # An earlier round used a symmetric +100bp and justified the overshoot
+    # (~21bp on these grossed-up numbers) as a bull case "building ahead of
+    # demand". That reading is dropped: round 2 established the principle
+    # that each scenario lands on its own sustaining level, and applying it
+    # here rather than preserving a flourish keeps all six terminal points
+    # (capex and ROU, three scenarios) on one rule.
     #
     # ROU additions shift +40bp, sized the same way: at Bull's 7.0% terminal
     # growth, holding ROU/revenue at 19.20% needs
     #     0.1920 * (0.07 + 0.1761) / 1.07 = 4.42%
-    # against Base's 4.06%, a 36bp gap, so a uniform +40bp puts Bull's
-    # terminal at 4.46% — within 4bp of its own hold-flat level. A faster
-    # rollout signs more leases as well as spending more capex; modelling
-    # one without the other would understate what the growth costs.
+    # against Base's 4.06%, a 35bp gap, so a uniform +40bp puts Bull's
+    # terminal at 4.46% — 4.4bp above its own hold-flat level.
+    #
+    # Note the two ROU shifts are equal in magnitude (+/-40bp) while the
+    # gaps they close are not, and the direction is the reverse of what an
+    # earlier round stated: Bull's +40bp is LARGER than its 35bp gap, and it
+    # is Bear's -40bp that is smaller than its 45bp gap. Same cause as the
+    # capex asymmetry above — the unequal growth deltas — and both land
+    # within 5bp, which is the tolerance a single rounded delta buys.
+    #
+    # A faster rollout signs more leases as well as spending more capex;
+    # modelling one without the other would understate what the growth
+    # costs.
     "Bull": _scenario(
         BASE,
         growth_delta=0.025,
