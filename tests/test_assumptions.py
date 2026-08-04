@@ -24,8 +24,20 @@ def test_each_scenario_has_one_rate_per_forecast_year():
 
 
 def test_perpetuity_growth_below_wacc_in_every_scenario():
+    """Asserts against the real computed WACC, which the name always promised.
+
+    Until Task 9 built ``wacc()`` this checked ``risk_free_rate + 2%`` as a
+    proxy. Note what the change does: the proxy bound was 6.0% against a true
+    WACC of 7.725%, so this assertion is now LOOSER, not tighter. It is
+    nonetheless the right one — a Gordon perpetuity with g >= WACC is
+    infinite, and that, not an arbitrary spread over gilts, is the hard bound.
+    The proxy also ignored beta, the equity risk premium and the debt weight
+    entirely, so it would not have moved if any of them changed; this does.
+    """
+    from bluebook.valuation import wacc
+
     for name, drivers in SCENARIOS.items():
-        assert drivers.perpetuity_growth < drivers.risk_free_rate + 0.02, name
+        assert drivers.perpetuity_growth < wacc(drivers), name
 
 
 @pytest.mark.parametrize("name", ["Bear", "Base", "Bull"])
