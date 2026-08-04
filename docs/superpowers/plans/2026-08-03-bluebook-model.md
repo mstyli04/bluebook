@@ -907,11 +907,15 @@ def test_ppe_rolls_forward():
     assert fa.depreciation[1] == pytest.approx(fa.closing_ppe[0] * BASE.ppe_depreciation_rate)
 
 
-def test_lease_liability_rolls_forward_with_interest_and_principal():
+def test_lease_liability_rolls_forward_on_additions_and_principal():
     lz = leases(opening_rou=800.0, opening_liability=850.0, revenue=REVENUE, drivers=BASE)
     assert lz.closing_rou[0] == pytest.approx(800.0 + lz.additions[0] - lz.depreciation[0])
+    # IFRS 16: accrued interest and interest PAID cancel each year (Greggs pays
+    # lease interest in cash separately from principal), so interest must NOT
+    # capitalise into the balance. Verified 2026-08-04: including it drifts the
+    # ROU-vs-liability gap to -24% by FY2030 against a stable historical -7/-8%.
     assert lz.closing_liability[0] == pytest.approx(
-        850.0 + lz.additions[0] + lz.interest[0] - lz.principal_paid[0]
+        850.0 + lz.additions[0] - lz.principal_paid[0]
     )
 
 
