@@ -2,10 +2,15 @@
 
 Every operating driver below is anchored to a ratio computed from
 ``GREGGS_HISTORICALS`` (see ``src/bluebook/inputs/greggs.py``), not to a
-round-number guess. The historical ratio each driver was anchored to is
-written in the comment beside it, alongside the reason for any deliberate
-drift away from that anchor across the five-year forecast or between
-scenarios.
+round-number guess. The ``HIST_*`` constants defined below are computed from
+that data at import time — the driver comments reference those names rather
+than restating the historical numbers as prose, precisely so a comment
+cannot silently drift out of sync with the data it describes (three
+consecutive review rounds each caught exactly that kind of drift: a stated
+delta, a stated position within a range, and a stated count of years, all
+wrong in ways nothing but a human re-check would catch). Where a comment
+still states a number for readability, it is checked against the ``HIST_*``
+constant it is describing.
 
 Two things worth knowing about the historicals this module reads:
 
@@ -28,6 +33,8 @@ reasoned estimates, not sourced facts.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+
+from bluebook.inputs.greggs import GREGGS_HISTORICALS
 
 FORECAST_YEARS = ["FY2026", "FY2027", "FY2028", "FY2029", "FY2030"]
 
@@ -66,93 +73,142 @@ class Drivers:
 
 
 # ---------------------------------------------------------------------------
-# Historical ratios (computed from GREGGS_HISTORICALS), for reference:
-#
-#                        FY2023    FY2024    FY2025
-#   gross_margin          60.74%    61.74%    61.46%
-#   opex_pct_revenue      42.99%    44.14%    45.13%
-#   da_pct_revenue         7.12%     7.20%     7.79%
-#   ebit_margin           10.63%    10.40%     8.54%
-#   effective tax rate    24.32%    24.77%    27.00%
-#   inventory_days         25.1      26.1      24.5
-#   receivable_days        10.9      11.3      11.8
-#   payable_days          108.4     115.5     120.1
-#   capex_pct_revenue     10.95%    11.96%    13.27%
-#   rou_additions_pct_rev  3.88%     7.14%     3.48%
-#   dividend payout ratio 42.7%     69.6%     57.5%
-#
-#   ppe_depreciation_rate (dep_ppe / opening PP&E): FY25 94.6 / FY24 664.7 = 14.23%
-#   rou_depreciation_rate (dep_rou / opening ROU):  FY25 68.2 / FY24 387.2 = 17.61%
-#
-# Revenue growth: FY2023->FY2024 = +11.32%, FY2024->FY2025 = +6.79% (decelerating).
+# Historical ratios, derived from GREGGS_HISTORICALS — computed here, not
+# hardcoded, so they can never go stale relative to the underlying data.
+# Index order matches GREGGS_HISTORICALS: [FY2023, FY2024, FY2025]. The
+# *_RATE / *_GROWTH pairs below have only 2 entries (FY23->24, FY24->25),
+# since each needs an opening-year reference.
 # ---------------------------------------------------------------------------
 
+
+def _pbt(year) -> float:
+    """Profit before tax for one HistoricalYear, £m."""
+    ebit = (
+        year.revenue.value
+        - year.cost_of_sales.value
+        - year.operating_costs.value
+        - (year.depreciation_ppe.value + year.depreciation_rou.value + year.amortisation.value)
+    )
+    return ebit - year.finance_costs.value + year.finance_income.value
+
+
+HIST_GROSS_MARGIN = tuple(
+    (y.revenue.value - y.cost_of_sales.value) / y.revenue.value for y in GREGGS_HISTORICALS
+)
+HIST_OPEX_PCT_REVENUE = tuple(
+    y.operating_costs.value / y.revenue.value for y in GREGGS_HISTORICALS
+)
+HIST_DA_PCT_REVENUE = tuple(
+    (y.depreciation_ppe.value + y.depreciation_rou.value + y.amortisation.value) / y.revenue.value
+    for y in GREGGS_HISTORICALS
+)
+HIST_EBIT_MARGIN = tuple(
+    gm - opex - da
+    for gm, opex, da in zip(HIST_GROSS_MARGIN, HIST_OPEX_PCT_REVENUE, HIST_DA_PCT_REVENUE)
+)
+HIST_EFFECTIVE_TAX_RATE = tuple(y.tax_expense.value / _pbt(y) for y in GREGGS_HISTORICALS)
+HIST_NET_INCOME = tuple(_pbt(y) - y.tax_expense.value for y in GREGGS_HISTORICALS)
+HIST_DIVIDEND_PAYOUT = tuple(
+    y.dividends_paid.value / ni for y, ni in zip(GREGGS_HISTORICALS, HIST_NET_INCOME)
+)
+HIST_CAPEX_PCT_REVENUE = tuple(y.capex.value / y.revenue.value for y in GREGGS_HISTORICALS)
+HIST_CAPEX_LOW = min(HIST_CAPEX_PCT_REVENUE)
+HIST_CAPEX_HIGH = max(HIST_CAPEX_PCT_REVENUE)
+HIST_ROU_ADDITIONS_PCT_REVENUE = tuple(
+    y.rou_additions.value / y.revenue.value for y in GREGGS_HISTORICALS
+)
+HIST_INVENTORY_DAYS = tuple(
+    y.inventories.value / y.cost_of_sales.value * 365 for y in GREGGS_HISTORICALS
+)
+HIST_RECEIVABLE_DAYS = tuple(
+    y.trade_receivables.value / y.revenue.value * 365 for y in GREGGS_HISTORICALS
+)
+HIST_PAYABLE_DAYS = tuple(
+    y.trade_payables.value / y.cost_of_sales.value * 365 for y in GREGGS_HISTORICALS
+)
+HIST_REVENUE_GROWTH = tuple(
+    (b.revenue.value - a.revenue.value) / a.revenue.value
+    for a, b in zip(GREGGS_HISTORICALS[:-1], GREGGS_HISTORICALS[1:])
+)
+HIST_PPE_DEPRECIATION_RATE = tuple(
+    b.depreciation_ppe.value / a.ppe.value
+    for a, b in zip(GREGGS_HISTORICALS[:-1], GREGGS_HISTORICALS[1:])
+)
+HIST_ROU_DEPRECIATION_RATE = tuple(
+    b.depreciation_rou.value / a.rou_assets.value
+    for a, b in zip(GREGGS_HISTORICALS[:-1], GREGGS_HISTORICALS[1:])
+)
+
+
 BASE = Drivers(
-    # Decelerating from the FY2024->FY2025 actual of +6.79% (itself down from
-    # +11.32% the year before) toward a mid-single-digit long-run rate as the
-    # shop estate matures and like-for-like growth normalises.
+    # Decelerating from HIST_REVENUE_GROWTH[-1] (FY2024->FY2025 actual,
+    # +6.79%), itself down from HIST_REVENUE_GROWTH[0] (FY2023->FY2024,
+    # +11.32%), toward a mid-single-digit long-run rate as the shop estate
+    # matures and like-for-like growth normalises.
     revenue_growth=(0.06, 0.055, 0.05, 0.045, 0.045),
 
-    # Year 1 anchored exactly to the FY2025 actual (61.46%). FY2023-25 actual
-    # was 60.7% / 61.7% / 61.5% - roughly flat within a ~100bp band. Base case
-    # models a modest 54bp improvement over 5 years (0.6200 - 0.6146) from
-    # supply-chain investment (new distribution centres) reaching scale.
+    # Year 1 anchored exactly to HIST_GROSS_MARGIN[-1] (FY2025 actual,
+    # 61.46%). HIST_GROSS_MARGIN was roughly flat across FY2023-25 (within a
+    # ~100bp band). Base case models a modest improvement to 62.00% by
+    # FY2030 from supply-chain investment (new distribution centres)
+    # reaching scale.
     gross_margin=(0.6146, 0.6165, 0.6180, 0.6190, 0.6200),
 
-    # Year 1 anchored exactly to the FY2025 actual (45.13%). FY2023-25 actual
-    # was rising (43.0% / 44.1% / 45.1%), driven by wage inflation and the
-    # front-loaded cost of new DC capacity coming online. Base case assumes
-    # that capacity reaching utilisation partially offsets the rising trend,
-    # easing 83bp over the forecast (0.4513 - 0.4430) rather than reversing
-    # it entirely.
+    # Year 1 anchored exactly to HIST_OPEX_PCT_REVENUE[-1] (FY2025 actual,
+    # 45.13%). HIST_OPEX_PCT_REVENUE rose across FY2023-25, driven by wage
+    # inflation and the front-loaded cost of new DC capacity coming online.
+    # Base case assumes that capacity reaching utilisation partially offsets
+    # the rising trend, easing to 44.30% by FY2030 rather than reversing it
+    # entirely.
     opex_pct_revenue=(0.4513, 0.4480, 0.4460, 0.4445, 0.4430),
 
-    # Year 1 anchored exactly to the FY2025 actual (13.27%). FY2023-25 actual
-    # was rising (10.95% / 11.96% / 13.27%) through the Derby/Kettering/
-    # Balliol Park distribution-centre build programme. Base case tapers back
-    # toward, and lands AT, the ~11% historical run-rate by FY2030 (13.27% ->
-    # 11.00%, a 227bp decline) rather than tapering through it — 11.00% sits
-    # just above the 3-year historical LOW of 10.95% (FY2023), i.e. near the
-    # bottom of the historical range (10.95%-13.27%), not below it, since the
-    # DC build programme moderates capex intensity but doesn't eliminate the
-    # ongoing store/estate capex that sits under it. Because this is the
-    # terminal-year driver that FCF gets capitalised on in perpetuity, ending
-    # below the historical range (as an earlier draft did, at 8.5%) would
-    # understate terminal value; owner ruling, see task-4-report.md fix log.
+    # Year 1 anchored exactly to HIST_CAPEX_PCT_REVENUE[-1] (FY2025 actual,
+    # 13.27%, also HIST_CAPEX_HIGH). HIST_CAPEX_PCT_REVENUE rose across
+    # FY2023-25 through the Derby/Kettering/Balliol Park distribution-centre
+    # build programme, from HIST_CAPEX_LOW (FY2023, 10.95%) to
+    # HIST_CAPEX_HIGH. Base case tapers to 11.00% by FY2030 — just above
+    # HIST_CAPEX_LOW, i.e. inside the historical range, not below it — as
+    # that programme completes: the DC build moderates capex intensity but
+    # doesn't eliminate the ongoing store/estate capex sitting under it.
+    # This is the terminal-year driver that FCF gets capitalised on in
+    # perpetuity, so ending below HIST_CAPEX_LOW (as an earlier draft did,
+    # at 8.5%) would understate terminal value; owner ruling, see
+    # task-4-report.md fix log.
     capex_pct_revenue=(0.1327, 0.1250, 0.1180, 0.1130, 0.1100),
 
-    # Year 1 anchored (rounded) to the FY2025 actual of 3.48%. FY2023-25
-    # actual was volatile (3.9% / 7.1% / 3.5%, reflecting lumpy lease
-    # signings), so held near the recent level with a slight uptick
-    # consistent with Greggs' guided ~140-160 net new shops/year.
+    # Year 1 anchored (rounded) to HIST_ROU_ADDITIONS_PCT_REVENUE[-1]
+    # (FY2025 actual, 3.48%). HIST_ROU_ADDITIONS_PCT_REVENUE was volatile
+    # across FY2023-25 (lumpy lease signings), so held near the recent level
+    # with a slight uptick consistent with Greggs' guided ~140-160 net new
+    # shops/year.
     rou_additions_pct_revenue=(0.035, 0.037, 0.038, 0.040, 0.040),
 
-    # FY2025 actual = 24.5 days (FY2023 25.1, FY2024 26.1) - stable; anchored
-    # to the latest year and held flat.
+    # Anchored to HIST_INVENTORY_DAYS[-1] (FY2025 actual, ~24.5 days),
+    # broadly stable across FY2023-25; held flat.
     inventory_days=24.5,
 
-    # FY2025 actual = 11.8 days (FY2023 10.9, FY2024 11.3) - mild rising
-    # trend; anchored to the latest year and held flat.
+    # Anchored to HIST_RECEIVABLE_DAYS[-1] (FY2025 actual, ~11.8 days), a
+    # mild rising trend across FY2023-25; held flat.
     receivable_days=11.8,
 
-    # FY2025 actual = 120.1 days (FY2023 108.4, FY2024 115.5) - rising, as
-    # buying power lengthens supplier terms. Anchored to the FY2025 level but
-    # held flat rather than extrapolating the trend further, since indefinite
+    # Anchored to HIST_PAYABLE_DAYS[-1] (FY2025 actual, ~120 days), which
+    # rose across FY2023-25 as buying power lengthened supplier terms; held
+    # flat rather than extrapolating the trend further, since indefinite
     # extension of payable terms is not a realistic steady state.
     payable_days=120.0,
 
-    # FY2025 depreciation_ppe (94.6) / FY2024 opening PP&E (664.7) = 14.23%;
-    # anchored exactly.
+    # Anchored to HIST_PPE_DEPRECIATION_RATE[-1] (FY2025 depreciation_ppe /
+    # FY2024 opening PP&E, 14.23%).
     ppe_depreciation_rate=0.1423,
 
-    # FY2025 depreciation_rou (68.2) / FY2024 opening ROU assets (387.2) =
-    # 17.61%; anchored exactly.
+    # Anchored to HIST_ROU_DEPRECIATION_RATE[-1] (FY2025 depreciation_rou /
+    # FY2024 opening ROU assets, 17.61%).
     rou_depreciation_rate=0.1761,
 
-    # UK statutory main corporation tax rate since April 2023. FY2023-25
-    # effective rates (tax_expense / PBT) were 24.3% / 24.8% / 27.0% - the
-    # forward-run rate uses the statutory rate rather than the more volatile
-    # trailing effective rate (divergence from the FY2025 actual is ~200bp).
+    # UK statutory main corporation tax rate since April 2023.
+    # HIST_EFFECTIVE_TAX_RATE was more volatile across FY2023-25 than this
+    # single rate; the forward-run rate uses the statutory rate rather than
+    # the trailing effective rate.
     tax_rate=0.25,
 
     # --- WACC build: none of these four is in a filing; each is a judgement
@@ -189,20 +245,25 @@ BASE = Drivers(
 
     # Same basis as cost_of_debt - approximate rate on the drawn RCF.
     interest_rate_debt=0.055,
-    # FY2023-25 actual cash balances were £195.3m / £125.3m / £70.8m
-    # (falling as the capex and dividend programme stepped up, alongside a
-    # £25m RCF draw in FY2025). The floor is set at £50m, below the FY2025
-    # actual low of £70.8m: it is a hard minimum the forecast is tested
-    # against to flag when the business would need external financing
-    # (e.g. a further revolver draw) to keep operating, not a target
-    # buffer the model tries to hold cash above.
+    # FY2023-25 actual cash balances fell from £195.3m to £70.8m (as the
+    # capex and dividend programme stepped up, alongside a £25m RCF draw in
+    # FY2025). The floor is set at £50m, below the FY2025 actual: it is a
+    # hard minimum the forecast is tested against to flag when the business
+    # would need external financing (e.g. a further revolver draw) to keep
+    # operating, not a target buffer the model tries to hold cash above.
     minimum_cash=50.0,
     # Greggs' stated ordinary dividend policy targets ~50% of underlying
-    # post-tax profit. FY2023-25 actual cash payout (dividends_paid / net
-    # income) was 42.7% / 69.6% / 57.5% - volatile due to special dividends -
-    # so the base case uses the stated ordinary policy rate rather than the
-    # volatile trailing actual.
+    # post-tax profit. HIST_DIVIDEND_PAYOUT was volatile across FY2023-25
+    # (42.7% / 69.6% / 57.5%) due to special dividends, so the base case
+    # uses the stated ordinary policy rate rather than the volatile trailing
+    # actual.
     dividend_payout_ratio=0.50,
+)
+
+# Sanity checks: keep the capex anchors above from silently drifting out of
+# the historical range they're reasoned about. These run at import time.
+assert HIST_CAPEX_LOW <= BASE.capex_pct_revenue[-1] <= HIST_CAPEX_HIGH, (
+    "Base terminal capex must stay within the historical range"
 )
 
 
@@ -220,8 +281,8 @@ def _scenario(
 
     capex_pct_revenue is either a uniform capex_delta applied to every year
     of the base path, or an explicit tuple supplied by the caller (used for
-    Bear, whose capex path is floored rather than a pure uniform shift — see
-    the comment beside its definition below).
+    Bear, whose capex path is a floored uniform shift — see the comment
+    beside BEAR_CAPEX_PCT_REVENUE below).
     """
     if capex_pct_revenue is None:
         if capex_delta is None:
@@ -237,31 +298,36 @@ def _scenario(
     )
 
 
-# Bear capex path — explicit, not a uniform shift off Base.
+# Bear capex path: what it plainly is — Base minus 100bp/year, eased until
+# it reaches HIST_CAPEX_LOW, then held there. Not an independently derived
+# path, just that rule applied and stated honestly:
 #
-# A uniform base_delta=-0.010 applied to the (revised) Base path would give
-# (12.27%, 11.50%, 10.80%, 10.30%, 10.00%): the last two years fall below
-# the entire 3-year historical range (10.95%-13.27%), which is exactly the
-# defect that was fixed on the Base case (a terminal-year capex ratio below
-# the historical range mechanically inflates terminal FCF, undercutting the
-# stress the Bear case is meant to depict).
+# Applying capex_delta=-0.010 to every year of BASE.capex_pct_revenue
+# uniformly gives (12.27%, 11.50%, 10.80%, 10.30%, 10.00%). Three of those
+# five years — FY2028, FY2029 and FY2030 — fall below HIST_CAPEX_LOW
+# (10.95%). A bear-case terminal capex ratio below the historical low
+# mechanically inflates terminal FCF, which would partly undercut the
+# stress this scenario is meant to depict — the same terminal-value
+# reasoning that governs BASE's capex path above.
 #
-# Instead: the first two years ease by the same -1.0pp as a uniform shift
-# would (12.27%, 11.50%) — a slower store rollout under demand/cost
-# pressure is a reasonable near-term stress read — but from FY2028 the path
-# is floored at the historical low of 10.95% (FY2023) and held there,
-# rather than continuing to taper down. Bear is still below Base in every
-# forecast year (e.g. 10.95% vs Base's 11.00% by FY2030), so it still reads
-# as tighter capex discipline than Base, just not tighter than Greggs has
-# ever actually run.
+# So the first two years keep the uniform -100bp shift (12.27%, 11.50%: a
+# slower store rollout under demand/cost pressure is a reasonable near-term
+# stress read), and FY2028 onward is floored at HIST_CAPEX_LOW instead of
+# continuing to taper down. The result is still below Base in every
+# forecast year (tighter capex discipline than Base), just never below the
+# level Greggs has actually run at historically.
 BEAR_CAPEX_PCT_REVENUE = (0.1227, 0.1150, 0.1095, 0.1095, 0.1095)
+
+assert HIST_CAPEX_LOW <= min(BEAR_CAPEX_PCT_REVENUE), (
+    "Bear-case capex must never fall below the historical low"
+)
 
 SCENARIOS = {
     # Consumer-slowdown / cost-inflation case: growth decelerates further,
     # gross margin compresses under input-cost pressure, opex ratio worsens
-    # (less operating leverage), capex intensity eases as store rollout
-    # slows (floored at the historical low, see BEAR_CAPEX_PCT_REVENUE above),
-    # and the exit multiple de-rates.
+    # (less operating leverage), capex intensity eases but is floored at
+    # HIST_CAPEX_LOW rather than falling below it (see BEAR_CAPEX_PCT_REVENUE
+    # above), and the exit multiple de-rates.
     "Bear": _scenario(
         BASE,
         growth_delta=-0.03,
@@ -273,8 +339,8 @@ SCENARIOS = {
     "Base": BASE,
     # Continued strong footfall/expansion case: growth holds up better,
     # margin expands on scale/mix, opex ratio improves further with
-    # operating leverage, capex intensity rises with a faster rollout
-    # (a uniform +1.0pp over Base raises no floor/ceiling concern here, and
+    # operating leverage, capex intensity rises with a faster rollout (a
+    # uniform +1.0pp over Base raises no floor/ceiling concern here, and
     # keeps Bull's capex path strictly above Base's at every year, which is
     # what funding faster growth than Base should imply), and the exit
     # multiple re-rates up.
