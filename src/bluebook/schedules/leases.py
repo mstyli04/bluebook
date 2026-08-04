@@ -42,12 +42,13 @@ term is derived as:
     implied_term_years = total undiscounted lease cash flows
                           / undiscounted cash flows due within one year
 
-This is the standard "weighted-average-life" shortcut for a maturity
-schedule: if the undiscounted repayment stream were level at the near-term
-run-rate, this ratio is exactly the number of years it would take to run the
-book off, and it is a good approximation even though the true schedule
-tapers (front-loaded low bands, one very wide 5-10yr and 10-20yr band). It
-uses only figures printed on the same table, with no invented number:
+This is a "total over near-term run-rate" ratio, not a true weighted-average
+life (WAL) — a true WAL timing-weights every band by its midpoint and would
+land near 5.8 years here, dragged down by the very wide 5-10yr and 10-20yr
+bands. The ratio used instead assumes the undiscounted repayment stream
+stays level at the near-term run-rate, in which case it is exactly the
+number of years it would take to run the book off. It uses only figures
+printed on the same table, with no invented number:
 
     IMPLIED_LEASE_TERM_YEARS = 582.3 / 79.1 ≈ 7.36 years
 
@@ -66,6 +67,35 @@ Both come out within ~2% of the actual reported cash principal repayment,
 which is strong evidence the derived term is the right order of magnitude
 and that the brief's sketched formula (kept as-is below) is a reasonable
 model of principal repayment, not just a plausible-looking guess.
+
+--------------------------------------------------------------------------
+Additions coefficient (the "* 0.1" in the sketch) — derivation
+--------------------------------------------------------------------------
+The brief's sketch left `additions * 0.1` as a bare literal alongside the
+named, cited `implied_term_years`. It is promoted below to
+`LEASE_ADDITIONS_PRINCIPAL_RATE`, an empirical fit rather than a
+Greggs-disclosed figure: it approximates the extra partial-year principal
+amortisation contributed by leases signed *during* the year (a full year's
+`additions / implied_term_years` would overstate their pay-down, since a
+lease added mid-year has only had part of a year to amortise).
+
+Fixing `IMPLIED_LEASE_TERM_YEARS` at the value derived above, the two
+historical years with both an opening liability and a reported
+`lease_principal_paid` in `inputs/greggs.py` (FY2024 and FY2025) give two
+equations in one remaining unknown, k:
+
+    opening_liability / T + additions * k = lease_principal_paid
+
+    FY2024: 319.6 / 7.36 + 143.8 * k = 56.7  ->  k ≈ 0.093
+    FY2025: 415.1 / 7.36 +  74.8 * k = 63.3  ->  k ≈ 0.092
+
+Solving the two simultaneously (rather than picking one) for the
+least-squares-consistent (T, k) pair gives T ≈ 7.361 years and k ≈ 0.0924 —
+the T that falls out of this joint solve lands within 0.01 of the
+maturity-table-derived `IMPLIED_LEASE_TERM_YEARS` above, which is
+independent corroboration of that figure from a completely different
+source (cash principal paid vs. the undiscounted maturity schedule).
+`LEASE_ADDITIONS_PRINCIPAL_RATE` is set to the resulting k ≈ 0.0924.
 """
 
 from __future__ import annotations
@@ -82,6 +112,14 @@ GREGGS_LEASE_MATURITY_LESS_THAN_1YR = 79.1  # FY2025 AR p.154, Note 11
 IMPLIED_LEASE_TERM_YEARS = (
     GREGGS_LEASE_MATURITY_TOTAL_UNDISCOUNTED / GREGGS_LEASE_MATURITY_LESS_THAN_1YR
 )  # ~7.36 years
+
+# See "Additions coefficient" derivation above. Empirical fit, not a
+# Greggs-disclosed figure: solved jointly with IMPLIED_LEASE_TERM_YEARS
+# against the two years of inputs/greggs.py that carry both an opening
+# lease liability and an actual reported lease_principal_paid (FY2024 and
+# FY2025). Approximates partial-year principal amortisation on in-year
+# lease additions.
+LEASE_ADDITIONS_PRINCIPAL_RATE = 0.0924
 
 
 @dataclass(frozen=True)
@@ -114,9 +152,23 @@ def leases(
         year_depreciation = rou * drivers.rou_depreciation_rate
         rou = rou + year_additions - year_depreciation
 
+        # Interest is computed and returned below (Task 8 needs it for the
+        # P&L finance cost line), but it does NOT capitalise into the
+        # liability balance. Under IFRS 16 the interest accrued on the
+        # lease liability and the interest paid in cash are the same
+        # figure in the same period (Greggs' FY2025 cash flow statement,
+        # p.132, shows "Interest paid on lease liabilities" and
+        # "Repayment of principal on lease liabilities" as separate cash
+        # lines), so they net to zero in the liability roll-forward. Adding
+        # year_interest here without an offsetting cash reduction
+        # double-counts it and drives the ROU-to-liability gap far outside
+        # its historical -7% to -9% band over a multi-year forecast (see
+        # test_rou_asset_and_liability_stay_within_historical_band below).
         year_interest = liability * drivers.cost_of_debt
-        year_principal_paid = liability / IMPLIED_LEASE_TERM_YEARS + year_additions * 0.1
-        liability = liability + year_additions + year_interest - year_principal_paid
+        year_principal_paid = (
+            liability / IMPLIED_LEASE_TERM_YEARS + year_additions * LEASE_ADDITIONS_PRINCIPAL_RATE
+        )
+        liability = liability + year_additions - year_principal_paid
 
         additions.append(year_additions)
         depreciation.append(year_depreciation)
