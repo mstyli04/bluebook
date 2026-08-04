@@ -1234,6 +1234,32 @@ git commit -m "feat: linked three-statement reference model"
 
 New ROU additions are deducted because lease liabilities are treated as debt in the bridge; funding the leased asset is therefore an investing outflow. This keeps the DCF consistent with the bridge.
 
+**Terminal-year construction — MANDATORY, added 2026-08-04 after Task 8's review.**
+
+Do NOT strike the terminal value off the raw FY2030 forecast year. Analysis of the completed model found two errors of opposite sign, neither visible unless both are examined together:
+
+1. **FY2030 is not a steady state.** PP&E/revenue is 46.9% / 46.3% / 45.9% against steady-state levels of 38.72% / 38.70% / 38.74%. The excess decays at the depreciation rate (14.23%/yr) and does not come within 1pp until FY2041. FY2030 D&A is therefore £32.3m above a steady-state-consistent year (Base). The FCF effect is **only the tax shield** — EBIT falls by the excess and D&A adds it back — so unlevered FCF is flattered by `excess × tax rate`, about +£8.1m Base (+6.8%). Capitalising that decaying item as a perpetuity overstates terminal value by ~£121m, ~£0.82/share.
+2. **Larger and opposite: terminal capex and ROU ratios are derived at the drivers' terminal growth of 4.5%, but the terminal value grows at 2%.** At g = 2% the sustaining total capex is 6.575%, not 7.41%, and sustaining ROU additions 3.69%, not 4.06%. A coherent 2%-growth terminal year has FCF of £149.3m against the modelled £126.4m — the FY2030 strike **understates** by £22.9m (−15.3%), worth about −£2.77/share.
+
+**Required construction.** Pick ONE terminal growth rate `g*` and use it in both the terminal year and the Gordon formula. Then build the terminal year explicitly:
+
+```
+capex          = p_ppe_anchor * (g* + d_ppe) / (1 + g*) / HIST_PPE_CAPEX_SHARE
+rou_additions  = p_rou_anchor * (g* + d_rou) / (1 + g*)
+D&A            = the steady-state charges those intensities imply
+change_in_NWC  = (NWC / revenue) * g* / (1 + g*)
+```
+
+where `p_ppe_anchor` and `p_rou_anchor` are the FY2025 actual asset intensities (38.68% and 19.20%), and every input is derived from `GREGGS_HISTORICALS` — no literals.
+
+The FY2029 excess PP&E is real and worth something. If it is to be valued, add it back **explicitly** as the present value of decaying tax shields, `tc × d × E × x / (1 − x)` where `x = (1 − d) / (1 + WACC)` — about £34m Base — not by leaving it inside a perpetuity. The £8.1m shield remains a legitimate FY2030 explicit-period cash flow; only the terminal value needs re-basing.
+
+Do not extend the forecast horizon to reach steady state — that would need 11 to 17 years of driver paths nobody has justified. Do not merely disclose the distortion; at £0.8 to £2.8 per share against a ~£12 price it is too large to wave through.
+
+**`exit_ev_ebitda` is currently 10.0 and is probably wrong** against post-IFRS 16 EBITDA, which is structurally higher because rent is added back, so the multiple should be structurally lower. Gordon and exit-multiple terminal values currently disagree by ~2.0×, with Gordon implying a 5.0× exit multiple. Do not re-guess it here: Task 10 builds the comps sheet, which gives a market-based multiple to calibrate against. Flag the disagreement in your report and leave the reconciliation to Task 10.
+
+**Also tighten `test_perpetuity_growth_below_wacc_in_every_scenario`.** It currently checks `g < risk_free_rate + 2%` as a proxy. Once `wacc()` exists, assert against the real computed WACC, which is what the test's name has always promised.
+
 - [ ] **Step 1: Write the failing tests**
 
 ```python
