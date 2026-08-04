@@ -196,22 +196,31 @@ BASE = Drivers(
     capex_pct_revenue=(0.1327, 0.1200, 0.1040, 0.0870, 0.0700),
 
     # Year 1 anchored (rounded) to HIST_ROU_ADDITIONS_PCT_REVENUE[-1]
-    # (FY2025 actual, 3.48%). HIST_ROU_ADDITIONS_PCT_REVENUE was volatile
-    # across FY2023-25 (3.89% / 7.14% / 3.48% — lumpy lease signings), so
-    # the path is held at the recent level rather than extrapolated, easing
-    # to a 3.40% terminal as the shop estate matures and net new openings
-    # slow: the same story the capex taper above tells, on the leased half
-    # of the estate.
+    # (FY2025 actual, 3.48%), gliding to a 4.06% terminal.
     #
-    # Unlike terminal capex, 3.40% is NOT the hold-flat level. Applying the
-    # same steady-state formula with d = rou_depreciation_rate (17.61%) and
-    # g = 4.5%, holding ROU/revenue at the FY2025 actual (413.0 / 2151.2 =
-    # 19.2%) would need 4.06%. At 3.40% the ROU book instead drifts down to
-    # ~16.1% of revenue by the terminal year. That is deliberate — a
-    # maturing estate signs proportionally fewer new leases, and it is the
-    # conservative direction for the lease liability — but it is a
-    # judgement, not a derivation, and is stated as such.
-    rou_additions_pct_revenue=(0.035, 0.035, 0.035, 0.034, 0.034),
+    # The terminal figure is derived on EXACTLY the same principle as
+    # terminal capex above — the level that holds the asset base at its
+    # FY2025 share of revenue — because Greggs runs one estate on two
+    # balance sheet lines, and the owned half and the leased half should not
+    # be governed by two different rules. Inverting p = c(1 + g)/(g + d)
+    # with p = the FY2025 actual ROU/revenue (413.0 / 2151.2 = 19.20%),
+    # d = rou_depreciation_rate (17.61%) and g = 4.5% terminal growth:
+    #     c = 0.1920 * (0.045 + 0.1761) / 1.045 = 4.06%
+    #
+    # This REPLACES a 3.40% terminal that was a judgement rather than a
+    # derivation. 3.40% implied ROU/revenue drifting down to ~16.1% — the
+    # leased estate quietly shrinking relative to sales while the owned
+    # estate was being held flat by construction, an asymmetry with no
+    # stated reason behind it.
+    #
+    # Note the direction: 4.06% is ABOVE the FY2025 actual of 3.48%, so the
+    # path glides up, not down. That is what the arithmetic says and it is
+    # not an aggressive read — FY2025's lease signings were the low end of a
+    # volatile run (HIST_ROU_ADDITIONS_PCT_REVENUE = 3.89% / 7.14% / 3.48%),
+    # and 4.06% sits inside that observed range and below the three-year
+    # aggregate of 4.84% (288.9 / 5975.2). Sustaining the current leased
+    # estate needs slightly more lease signing than FY2025 alone delivered.
+    rou_additions_pct_revenue=(0.0350, 0.0364, 0.0378, 0.0392, 0.0406),
 
     # Anchored to HIST_INVENTORY_DAYS[-1] (FY2025 actual, ~24.5 days),
     # broadly stable across FY2023-25; held flat.
@@ -290,9 +299,10 @@ BASE = Drivers(
     dividend_payout_ratio=0.50,
 )
 
-# What the capex paths must satisfy is covered by
-# test_terminal_capex_holds_ppe_to_revenue_near_the_last_actual and
-# test_capex_paths_are_ordered_bull_above_base_above_bear in
+# What the capex and ROU-addition paths must satisfy is covered by
+# test_terminal_capex_holds_ppe_to_revenue_near_the_last_actual,
+# test_terminal_rou_additions_hold_rou_to_revenue_near_the_last_actual and
+# test_investment_paths_are_ordered_bull_above_base_above_bear in
 # tests/test_assumptions.py, not by asserts here — see that file for why.
 
 
@@ -303,6 +313,7 @@ def _scenario(
     margin_delta: float,
     opex_delta: float,
     exit_ev_ebitda: float,
+    rou_delta: float,
     capex_delta: float | None = None,
     capex_pct_revenue: tuple[float, ...] | None = None,
 ) -> Drivers:
@@ -324,6 +335,9 @@ def _scenario(
         gross_margin=tuple(m + margin_delta for m in base.gross_margin),
         opex_pct_revenue=tuple(o + opex_delta for o in base.opex_pct_revenue),
         capex_pct_revenue=capex_pct_revenue,
+        rou_additions_pct_revenue=tuple(
+            r + rou_delta for r in base.rou_additions_pct_revenue
+        ),
         exit_ev_ebitda=exit_ev_ebitda,
     )
 
@@ -353,12 +367,23 @@ SCENARIOS = {
     # in the bear case than the base case is what a genuine demand slowdown
     # looks like, and the resulting FCF relief is real, not a modelling
     # artefact to be suppressed.
+    #
+    # ROU additions shift by -40bp on the same reasoning, and the size of
+    # the shift is set the same way: holding ROU/revenue at the FY2025
+    # 19.20% at Bear's 1.5% terminal growth needs
+    #     0.1920 * (0.015 + 0.1761) / 1.015 = 3.61%
+    # against Base's terminal 4.06%, a 45bp gap. A uniform -40bp lands
+    # Bear's terminal at 3.66%, within 5bp of its own hold-flat level, while
+    # keeping the path strictly below Base in every year. The shift is
+    # smaller than the capex shift (-100bp) because lease assets depreciate
+    # faster, so the same change in growth moves the sustaining rate less.
     "Bear": _scenario(
         BASE,
         growth_delta=-0.03,
         margin_delta=-0.015,
         opex_delta=0.010,
         capex_delta=-0.010,
+        rou_delta=-0.004,
         exit_ev_ebitda=8.5,
     ),
     "Base": BASE,
@@ -375,12 +400,21 @@ SCENARIOS = {
     # revenue against the FY2025 38.7%. That is the intended reading of a
     # bull case: the estate is being built out ahead of the demand it is
     # betting on, and the model pays for it.
+    #
+    # ROU additions shift +40bp, sized the same way: at Bull's 7.0% terminal
+    # growth, holding ROU/revenue at 19.20% needs
+    #     0.1920 * (0.07 + 0.1761) / 1.07 = 4.42%
+    # against Base's 4.06%, a 36bp gap, so a uniform +40bp puts Bull's
+    # terminal at 4.46% — within 4bp of its own hold-flat level. A faster
+    # rollout signs more leases as well as spending more capex; modelling
+    # one without the other would understate what the growth costs.
     "Bull": _scenario(
         BASE,
         growth_delta=0.025,
         margin_delta=0.015,
         opex_delta=-0.010,
         capex_delta=0.010,
+        rou_delta=0.004,
         exit_ev_ebitda=11.5,
     ),
 }

@@ -68,6 +68,16 @@ that total. It is therefore split before use:
                              balance to roll off (FY2024 + FY2025)
                            = (10.8 + 22.8) / (240.9 + 285.4) = 6.38%
 
+This is a two-year aggregate rather than the three-year one, because
+FY2023's intangible capex is not recoverable from the schema: implied
+additions need a prior-year balance to roll off and FY2022 is not in
+``GREGGS_HISTORICALS``. The disclosed three-year split (41.6 / 724.4 =
+5.74%) exists only in prose comments in ``inputs/greggs.py`` — ``capex`` is
+a single field — so it cannot be derived, and hardcoding it would put a
+figure in this module that no test could tie back to the filings. Owner
+ruling: derivation wins, two-year aggregate accepted. Closing the 64bp gap
+properly needs a ``capex_intangible`` field in ``inputs/schema.py``.
+
 where implied additions = closing intangibles - opening intangibles +
 amortisation. The PP&E share (93.62%) is what the fixed-asset schedule sees;
 the remainder is added to intangibles. The cash flow reports the total, so

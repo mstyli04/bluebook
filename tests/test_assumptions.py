@@ -143,14 +143,99 @@ def test_terminal_capex_holds_ppe_to_revenue_near_the_last_actual(name: str):
     )
 
 
-def test_capex_paths_are_ordered_bull_above_base_above_bear():
-    """Funding faster growth must cost more, in every year. This is the
-    ordering the old Bear floor broke once Bear's path hit HIST_CAPEX_LOW.
+def _fy2025_rou_to_revenue() -> float:
+    from bluebook.inputs.greggs import GREGGS_HISTORICALS
+
+    y = GREGGS_HISTORICALS[-1]
+    return y.rou_assets.value / y.revenue.value
+
+
+@pytest.mark.parametrize("name", ["Bear", "Base", "Bull"])
+def test_terminal_rou_additions_hold_rou_to_revenue_near_the_last_actual(name: str):
+    """The leased estate is governed by the same principle as the owned one.
+
+    Greggs runs one shop estate across two balance sheet lines. Setting
+    terminal capex to hold PP&E/revenue flat while letting ROU/revenue drift
+    would mean two asset bases under two different rules, which is exactly
+    the asymmetry this test exists to prevent. The band is tighter than the
+    capex one (1pp, not 5pp) because these terminals are derived directly
+    rather than shifted by a round delta; it still catches the previous
+    3.40% terminal, which implied 16.1% against a 19.2% actual.
+    """
+    drivers = SCENARIOS[name]
+    implied = _steady_state_asset_ratio(
+        drivers.rou_additions_pct_revenue[-1],
+        drivers.revenue_growth[-1],
+        drivers.rou_depreciation_rate,
+    )
+    actual = _fy2025_rou_to_revenue()
+    assert abs(implied - actual) <= 0.01, (
+        f"{name} terminal ROU additions of {drivers.rou_additions_pct_revenue[-1]:.2%} "
+        f"imply a steady-state ROU/revenue of {implied:.1%} against the FY2025 actual "
+        f"{actual:.1%}"
+    )
+
+
+def test_both_asset_bases_are_set_on_the_same_principle():
+    """The point of round 2, stated as an assertion.
+
+    Whatever the two terminal ratios are, they must both be the level that
+    sustains their own asset base — so the gap between the PP&E intensity
+    they imply and the ROU intensity they imply is no wider than the gap in
+    the actuals they are anchored to.
+    """
+    for name, drivers in SCENARIOS.items():
+        ppe_implied = _steady_state_asset_ratio(
+            drivers.capex_pct_revenue[-1],
+            drivers.revenue_growth[-1],
+            drivers.ppe_depreciation_rate,
+        )
+        rou_implied = _steady_state_asset_ratio(
+            drivers.rou_additions_pct_revenue[-1],
+            drivers.revenue_growth[-1],
+            drivers.rou_depreciation_rate,
+        )
+        ppe_drift = ppe_implied - _fy2025_ppe_to_revenue()
+        rou_drift = rou_implied - _fy2025_rou_to_revenue()
+        assert abs(ppe_drift - rou_drift) <= 0.02, (
+            f"{name}: PP&E intensity drifts {ppe_drift:+.1%} from the FY2025 actual "
+            f"while ROU drifts {rou_drift:+.1%} — the two asset bases are being "
+            f"governed by different rules"
+        )
+
+
+def test_investment_paths_are_ordered_bull_above_base_above_bear():
+    """Funding faster growth must cost more, in every year, on both the
+    owned and the leased estate. This is the ordering the old Bear capex
+    floor broke once its path hit HIST_CAPEX_LOW, and which the ROU paths
+    did not express at all before round 2 (all three scenarios shared one
+    path, so a bull case opened shops at the same rate as a bear case).
     """
     bear, base, bull = SCENARIOS["Bear"], SCENARIOS["Base"], SCENARIOS["Bull"]
     for i, year in enumerate(FORECAST_YEARS):
         assert bear.capex_pct_revenue[i] < base.capex_pct_revenue[i], year
         assert base.capex_pct_revenue[i] < bull.capex_pct_revenue[i], year
+        assert bear.rou_additions_pct_revenue[i] < base.rou_additions_pct_revenue[i], year
+        assert base.rou_additions_pct_revenue[i] < bull.rou_additions_pct_revenue[i], year
+
+
+def test_terminal_rou_additions_stay_inside_the_observed_range():
+    """4.06% is above the FY2025 actual of 3.48%, so the path glides up. That
+    is only defensible because FY2025's lease signings were the low end of a
+    volatile run — this pins that claim to the data rather than the comment.
+    """
+    from bluebook.assumptions import HIST_ROU_ADDITIONS_PCT_REVENUE
+
+    terminal = SCENARIOS["Base"].rou_additions_pct_revenue[-1]
+    assert min(HIST_ROU_ADDITIONS_PCT_REVENUE) <= terminal <= max(
+        HIST_ROU_ADDITIONS_PCT_REVENUE
+    )
+    from bluebook.inputs.greggs import GREGGS_HISTORICALS
+
+    three_year_aggregate = sum(y.rou_additions.value for y in GREGGS_HISTORICALS) / sum(
+        y.revenue.value for y in GREGGS_HISTORICALS
+    )
+    assert terminal < three_year_aggregate
 
 
 def test_capex_tapers_from_the_last_actual_rather_than_stepping_down():
