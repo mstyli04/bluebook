@@ -189,7 +189,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from bluebook.assumptions import Drivers, FORECAST_YEARS
+from bluebook.assumptions import (
+    FORECAST_YEARS,
+    Drivers,
+    amortisation_rate,
+    intangible_capex_share,
+)
 from bluebook.inputs.schema import HistoricalYear
 from bluebook.schedules.debt import INTEREST_BASIS, DebtSchedule, debt_schedule
 from bluebook.schedules.fixed_assets import FixedAssets, fixed_assets
@@ -198,40 +203,6 @@ from bluebook.schedules.working_capital import WorkingCapital, working_capital
 
 MAX_PASSES = 50
 CONVERGENCE_TOLERANCE = 1e-10
-
-
-def _intangible_capex_share(historicals: list[HistoricalYear]) -> float:
-    """Share of total cash capex that is intangible additions, not PP&E.
-
-    Aggregated across every year that has a prior-year balance to roll off,
-    rather than taken from the latest year alone: FY2025's 7.74% is an
-    outlier (the year Greggs' intangible additions more than doubled), and
-    a terminal assumption should not inherit one year's spike.
-
-    Implied additions = closing intangibles - opening intangibles +
-    amortisation, because the schema carries only total capex. Reconciles to
-    the PP&E/intangible split disclosed in the cash flow statements — FY2024
-    implies 10.8 against 10.9 reported, FY2025 22.8 against 22.1 — the
-    residual being disposals and reclassifications the balance movement
-    cannot see.
-    """
-    pairs = list(zip(historicals[:-1], historicals[1:]))
-    additions = sum(
-        later.intangibles.value - earlier.intangibles.value + later.amortisation.value
-        for earlier, later in pairs
-    )
-    total_capex = sum(later.capex.value for _, later in pairs)
-    return additions / total_capex
-
-
-def _amortisation_rate(historicals: list[HistoricalYear]) -> float:
-    """Amortisation as a rate on opening intangibles, from the last actual.
-
-    Anchored on the most recent year exactly as ``ppe_depreciation_rate``
-    and ``rou_depreciation_rate`` are in ``assumptions.py``: FY2025
-    amortisation over FY2024 closing intangibles, 4.7 / 24.9 = 18.9%.
-    """
-    return historicals[-1].amortisation.value / historicals[-2].intangibles.value
 
 
 class ModelConvergenceError(RuntimeError):
@@ -290,8 +261,8 @@ def build_model(historicals: list[HistoricalYear], drivers: Drivers) -> Model:
 
     # Intangibles have no drivers (Drivers is frozen); both sides of the
     # roll-forward are derived from the filings — see module docstring.
-    intangible_capex_share = _intangible_capex_share(historicals)
-    amortisation_rate = _amortisation_rate(historicals)
+    intangible_share = intangible_capex_share(historicals)
+    amortisation_pct = amortisation_rate(historicals)
 
     # --- Revenue -> gross profit -> opex -> EBITDA ------------------------
     revenue: list[float] = []
@@ -313,7 +284,7 @@ def build_model(historicals: list[HistoricalYear], drivers: Drivers) -> Model:
     ppe_drivers = replace(
         drivers,
         capex_pct_revenue=tuple(
-            c * (1.0 - intangible_capex_share) for c in drivers.capex_pct_revenue
+            c * (1.0 - intangible_share) for c in drivers.capex_pct_revenue
         ),
     )
     assets = fixed_assets(opening_ppe, revenue, ppe_drivers)
@@ -321,7 +292,7 @@ def build_model(historicals: list[HistoricalYear], drivers: Drivers) -> Model:
     nwc = working_capital(revenue, cost_of_sales, drivers, opening_nwc=opening_nwc)
 
     intangible_capex = [
-        r * capex_pct * intangible_capex_share
+        r * capex_pct * intangible_share
         for r, capex_pct in zip(revenue, drivers.capex_pct_revenue)
     ]
     total_capex = [p + i for p, i in zip(assets.capex, intangible_capex)]
@@ -334,7 +305,7 @@ def build_model(historicals: list[HistoricalYear], drivers: Drivers) -> Model:
     intangibles: list[float] = []
     intangible_balance = opening_intangibles
     for additions in intangible_capex:
-        year_amortisation = intangible_balance * amortisation_rate
+        year_amortisation = intangible_balance * amortisation_pct
         intangible_balance += additions - year_amortisation
         amortisation.append(year_amortisation)
         intangibles.append(intangible_balance)

@@ -124,6 +124,64 @@ HIST_RECEIVABLE_DAYS = tuple(
 HIST_PAYABLE_DAYS = tuple(
     y.trade_payables.value / y.cost_of_sales.value * 365 for y in GREGGS_HISTORICALS
 )
+def intangible_capex_share(historicals) -> float:
+    """Share of total cash capex that is intangible additions, not PP&E.
+
+    Lives here rather than in ``reference.py`` because the terminal capex
+    driver below is derived from it: ``capex_pct_revenue`` is a TOTAL capex
+    ratio, but only ``1 - this`` reaches PP&E, so the level that sustains
+    PP&E must be grossed up by ``1 / (1 - intangible_capex_share)``. One
+    definition, read by both the driver derivation and the model that
+    consumes it, so the two cannot drift apart.
+
+    Aggregated across every year that has a prior-year balance to roll off,
+    rather than taken from the latest year alone: FY2025's 7.74% is an
+    outlier (the year Greggs' intangible additions more than doubled), and
+    a terminal assumption should not inherit one year's spike.
+
+    Implied additions = closing intangibles - opening intangibles +
+    amortisation, because the schema carries only total capex. Reconciles to
+    the PP&E/intangible split disclosed in the cash flow statements — FY2024
+    implies 10.8 against 10.9 reported, FY2025 22.8 against 22.1 — the
+    residual being disposals and reclassifications the balance movement
+    cannot see.
+
+    This is a two-year aggregate rather than the three-year one, because
+    FY2023's intangible capex is not recoverable: implied additions need a
+    prior-year balance and FY2022 is not in ``GREGGS_HISTORICALS``. The
+    disclosed three-year split (41.6 / 724.4 = 5.74%) exists only in prose
+    comments in ``inputs/greggs.py`` — ``capex`` is a single field — so it
+    cannot be derived, and hardcoding it would put a figure here that no
+    test could tie back to the filings. Owner ruling: derivation wins.
+    Closing the 64bp gap needs a ``capex_intangible`` field in the schema.
+    """
+    pairs = list(zip(historicals[:-1], historicals[1:]))
+    additions = sum(
+        later.intangibles.value - earlier.intangibles.value + later.amortisation.value
+        for earlier, later in pairs
+    )
+    total_capex = sum(later.capex.value for _, later in pairs)
+    return additions / total_capex
+
+
+def amortisation_rate(historicals) -> float:
+    """Amortisation as a rate on opening intangibles, from the last actual.
+
+    ``Drivers`` has no amortisation field and is frozen, so the rate is
+    derived here alongside the other filing-derived ratios. Anchored on the
+    most recent year exactly as ``ppe_depreciation_rate`` and
+    ``rou_depreciation_rate`` are: FY2025 amortisation over FY2024 closing
+    intangibles, 4.7 / 24.9 = 18.9%.
+    """
+    return historicals[-1].amortisation.value / historicals[-2].intangibles.value
+
+
+HIST_INTANGIBLE_CAPEX_SHARE = intangible_capex_share(GREGGS_HISTORICALS)
+HIST_AMORTISATION_RATE = amortisation_rate(GREGGS_HISTORICALS)
+# Share of total capex that actually reaches the PP&E line, and therefore
+# the factor the sustaining-capex derivation below has to gross up by.
+HIST_PPE_CAPEX_SHARE = 1.0 - HIST_INTANGIBLE_CAPEX_SHARE
+
 HIST_REVENUE_GROWTH = tuple(
     (b.revenue.value - a.revenue.value) / a.revenue.value
     for a, b in zip(GREGGS_HISTORICALS[:-1], GREGGS_HISTORICALS[1:])
@@ -161,7 +219,7 @@ BASE = Drivers(
     opex_pct_revenue=(0.4513, 0.4480, 0.4460, 0.4445, 0.4430),
 
     # Year 1 anchored exactly to HIST_CAPEX_PCT_REVENUE[-1] (FY2025 actual,
-    # 13.27%, also HIST_CAPEX_HIGH), tapering to 7.00% by FY2030. The taper
+    # 13.27%, also HIST_CAPEX_HIGH), tapering to 7.41% by FY2030. The taper
     # IS the story: the Derby/Kettering/Balliol Park distribution-centre
     # programme that drove HIST_CAPEX_PCT_REVENUE up across FY2023-25 (from
     # HIST_CAPEX_LOW, 10.95%, to HIST_CAPEX_HIGH, 13.27%) is completing, so
@@ -172,16 +230,37 @@ BASE = Drivers(
     # The terminal figure is the one that matters, because it is the ratio
     # FCF gets capitalised on in perpetuity, and it is derived rather than
     # picked. In steady state with revenue growth g and depreciation rate d,
-    # a capex ratio c holds PP&E/revenue at
-    #     p = c * (1 + g) / (g + d)
-    # Inverting at the FY2025 actual PP&E/revenue (832.1 / 2151.2 = 38.7%),
+    # capex reaching an asset base at a ratio c_ppe holds PP&E/revenue at
+    #     p = c_ppe * (1 + g) / (g + d)
+    # Inverting at the FY2025 actual PP&E/revenue (832.1 / 2151.2 = 38.68%),
     # g = 4.5% terminal growth and d = ppe_depreciation_rate (14.23%):
-    #     c = 0.387 * (0.045 + 0.1423) / 1.045 = 6.94%, i.e. ~7.0%
-    # So 7.0% is exactly the capex intensity that keeps the asset base a
-    # constant share of sales. Holding capex at the previous 11.00% instead
-    # would drive PP&E/revenue to 61%+ in perpetuity — a business quietly
-    # assumed to keep getting more capital-intensive forever, with no
-    # revenue benefit modelled for it.
+    #     c_ppe = 0.3868 * (0.045 + 0.1423) / 1.045 = 6.93%
+    #
+    # But c_ppe is NOT the driver. capex_pct_revenue is a ratio of TOTAL
+    # cash capex — PP&E plus intangible additions, the basis on which
+    # inputs/greggs.py records `capex` — and reference.py routes only
+    # HIST_PPE_CAPEX_SHARE (93.62%) of it into the fixed-asset schedule, the
+    # rest going to intangibles. The sustaining requirement must therefore
+    # be grossed up by 1 / HIST_PPE_CAPEX_SHARE:
+    #     c = 6.93% / (1 - 0.0638) = 7.41%
+    #
+    # Both figures are named constants derived from GREGGS_HISTORICALS, not
+    # literals, so the driver and the split cannot drift apart — see
+    # intangible_capex_share() above and
+    # test_terminal_capex_holds_ppe_to_revenue_near_the_last_actual, which
+    # reproduces this whole derivation including the gross-up.
+    #
+    # An earlier round set this to 7.00%, which was the ungrossed c_ppe used
+    # as if it were a total-capex ratio. That silently starved the PP&E line
+    # of the intangible share and drove true steady-state PP&E/revenue to
+    # 36.2%, ~2.4pp below the anchor the derivation claimed to hold. The
+    # error was invisible because the covering test reproduced the same
+    # unsplit formula.
+    #
+    # Holding capex at the pre-round-1 11.00% instead would drive
+    # PP&E/revenue to 57%+ in perpetuity — a business quietly assumed to
+    # keep getting more capital-intensive forever, with no revenue benefit
+    # modelled for it.
     #
     # This REVERSES the earlier ruling that terminal capex must stay inside
     # [HIST_CAPEX_LOW, HIST_CAPEX_HIGH]. That ruling was wrong twice over.
@@ -193,7 +272,7 @@ BASE = Drivers(
     # three historical years sit inside the DC build programme, so the
     # historical range is an expansion-phase range. Bounding a terminal
     # steady-state assumption by it assumes the expansion never ends.
-    capex_pct_revenue=(0.1327, 0.1200, 0.1040, 0.0870, 0.0700),
+    capex_pct_revenue=(0.1327, 0.1210, 0.1060, 0.0900, 0.0741),
 
     # Year 1 anchored (rounded) to HIST_ROU_ADDITIONS_PCT_REVENUE[-1]
     # (FY2025 actual, 3.48%), gliding to a 4.06% terminal.
@@ -368,6 +447,12 @@ SCENARIOS = {
     # looks like, and the resulting FCF relief is real, not a modelling
     # artefact to be suppressed.
     #
+    # The -100bp is sized off the same grossed-up derivation as Base: at
+    # Bear's 1.5% terminal growth, sustaining PP&E/revenue at 38.68% needs
+    # c_ppe = 0.3868 * (0.015 + 0.1423) / 1.015 = 5.99%, which grossed up by
+    # 1 / HIST_PPE_CAPEX_SHARE is 6.40%. Base's terminal less 100bp gives
+    # 6.41% — within 1bp of Bear's own sustaining level.
+    #
     # ROU additions shift by -40bp on the same reasoning, and the size of
     # the shift is set the same way: holding ROU/revenue at the FY2025
     # 19.20% at Bear's 1.5% terminal growth needs
@@ -393,13 +478,22 @@ SCENARIOS = {
     # year (funding faster growth than Base must cost more, not less), and
     # the exit multiple re-rates up.
     #
-    # By the same steady-state arithmetic, Bull's 7.0% terminal growth would
-    # need 0.387 * (0.07 + 0.1423) / 1.07 = 7.68% to hold PP&E/revenue flat,
-    # so the uniform +100bp (8.00%) sits ~30bp above the hold-flat level and
-    # lets the asset base grow a little faster than sales — to 40.3% of
-    # revenue against the FY2025 38.7%. That is the intended reading of a
-    # bull case: the estate is being built out ahead of the demand it is
-    # betting on, and the model pays for it.
+    # The shift is +80bp rather than +100bp, and the asymmetry with Bear is
+    # derived, not a fudge. At Bull's 7.0% terminal growth, sustaining
+    # PP&E/revenue at 38.68% needs c_ppe = 0.3868 * (0.07 + 0.1423) / 1.07 =
+    # 7.67%, which grossed up by 1 / HIST_PPE_CAPEX_SHARE is 8.20%. Base's
+    # terminal plus 80bp gives 8.21%, within 1bp of Bull's own sustaining
+    # level; plus 100bp would have overshot it by ~20bp. The gap from Base
+    # is smaller than Bear's because the sustaining ratio is convex in
+    # growth — the same reason Bull's ROU shift (+40bp) is smaller in
+    # magnitude than the arithmetic gap suggests.
+    #
+    # An earlier round used a symmetric +100bp and justified the ~30bp
+    # overshoot as a bull case "building ahead of demand". That reading is
+    # dropped: round 2 established the principle that each scenario lands on
+    # its own sustaining level, and applying it here rather than preserving
+    # a flourish keeps all six terminal points (capex and ROU, three
+    # scenarios) on one rule.
     #
     # ROU additions shift +40bp, sized the same way: at Bull's 7.0% terminal
     # growth, holding ROU/revenue at 19.20% needs
@@ -413,7 +507,7 @@ SCENARIOS = {
         growth_delta=0.025,
         margin_delta=0.015,
         opex_delta=-0.010,
-        capex_delta=0.010,
+        capex_delta=0.008,
         rou_delta=0.004,
         exit_ev_ebitda=11.5,
     ),

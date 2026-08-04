@@ -99,14 +99,31 @@ def test_base_case_year_one_ebit_margin_tracks_last_actual():
 # resulting terminal cash flow is actually positive.
 
 
-def _steady_state_asset_ratio(capex_pct: float, growth: float, depreciation_rate: float) -> float:
+def _steady_state_asset_ratio(
+    capex_pct: float,
+    growth: float,
+    depreciation_rate: float,
+    share_reaching_asset: float = 1.0,
+) -> float:
     """Long-run asset/revenue ratio implied by a capex ratio.
 
     With asset base A, revenue R, capex ratio c and depreciation rate d,
     A_t = A_(t-1)(1 - d) + c*R_t. Holding A/R = p and R growing at g:
         p = p(1 - d)/(1 + g) + c   ->   p = c(1 + g)/(g + d)
+
+    ``share_reaching_asset`` is the fraction of the driver ratio that
+    actually lands on this asset base. It defaults to 1.0, which is correct
+    for ROU additions — ``leases()`` receives the whole of
+    ``rou_additions_pct_revenue``. It is NOT correct for PP&E:
+    ``capex_pct_revenue`` is a total-capex ratio and ``reference.py`` routes
+    only ``HIST_PPE_CAPEX_SHARE`` of it into the fixed-asset schedule. An
+    earlier version of this helper had no such parameter and so reproduced
+    the same unsplit formula the driver derivation used, which is exactly
+    why it certified a terminal capex ratio that in fact starved the PP&E
+    line by ~2.4pp of steady-state intensity. A test that shares a blind
+    spot with the thing it checks is not a test.
     """
-    return capex_pct * (1 + growth) / (growth + depreciation_rate)
+    return capex_pct * share_reaching_asset * (1 + growth) / (growth + depreciation_rate)
 
 
 def _fy2025_ppe_to_revenue() -> float:
@@ -125,21 +142,57 @@ def test_terminal_capex_holds_ppe_to_revenue_near_the_last_actual(name: str):
     The FY2025 actual PP&E/revenue is ~38.7%. A terminal capex ratio that
     implies a wildly different steady state is asserting, silently, that the
     business becomes structurally more (or less) capital-intensive than it
-    has ever been. The 5pp band is deliberately wide enough to allow a
-    genuine scenario difference — Bull does build ahead of demand — and
-    narrow enough to catch the previous 11.00% terminal, which implied 61%+.
+    has ever been. The 5pp band is wide enough to allow a genuine scenario
+    difference and narrow enough to catch the pre-round-1 11.00% terminal,
+    which implies 57%+ once the split is accounted for — a mutation this
+    test is checked against, not merely assumed to catch.
+
+    Grossed up by HIST_PPE_CAPEX_SHARE, because only that share of
+    capex_pct_revenue reaches PP&E. Without it the test reproduces the same
+    unsplit formula as the driver derivation and cannot see the error.
     """
+    from bluebook.assumptions import HIST_PPE_CAPEX_SHARE
+
     drivers = SCENARIOS[name]
     implied = _steady_state_asset_ratio(
         drivers.capex_pct_revenue[-1],
         drivers.revenue_growth[-1],
         drivers.ppe_depreciation_rate,
+        share_reaching_asset=HIST_PPE_CAPEX_SHARE,
     )
     actual = _fy2025_ppe_to_revenue()
     assert abs(implied - actual) <= 0.05, (
         f"{name} terminal capex of {drivers.capex_pct_revenue[-1]:.2%} implies a "
         f"steady-state PP&E/revenue of {implied:.1%} against the FY2025 actual "
         f"{actual:.1%}"
+    )
+
+
+@pytest.mark.parametrize("name", ["Bear", "Base", "Bull"])
+def test_terminal_capex_equals_its_own_grossed_up_sustaining_level(name: str):
+    """Reproduces the derivation in the BASE.capex_pct_revenue comment, in
+    full, from GREGGS_HISTORICALS — so the stated derivation and the tuple
+    cannot disagree.
+
+    The looser steady-state test above tolerates 5pp of drift, which is the
+    right band for "is this ratio sane" but wide enough that the driver
+    could sit a long way off its own stated derivation and still pass. This
+    one is tight: each scenario's terminal must be the sustaining level at
+    its OWN terminal growth, grossed up for the intangible split, to within
+    5bp of rounding. It is the test that catches a comment claiming 7.41%
+    over a tuple that says 7.00%.
+    """
+    from bluebook.assumptions import HIST_PPE_CAPEX_SHARE
+
+    drivers = SCENARIOS[name]
+    g = drivers.revenue_growth[-1]
+    sustaining_ppe_capex = (
+        _fy2025_ppe_to_revenue() * (g + drivers.ppe_depreciation_rate) / (1 + g)
+    )
+    expected_total_capex = sustaining_ppe_capex / HIST_PPE_CAPEX_SHARE
+    assert drivers.capex_pct_revenue[-1] == pytest.approx(expected_total_capex, abs=0.0005), (
+        f"{name} terminal capex is {drivers.capex_pct_revenue[-1]:.4%} but its own "
+        f"derivation gives {expected_total_capex:.4%}"
     )
 
 
@@ -184,11 +237,14 @@ def test_both_asset_bases_are_set_on_the_same_principle():
     they imply and the ROU intensity they imply is no wider than the gap in
     the actuals they are anchored to.
     """
+    from bluebook.assumptions import HIST_PPE_CAPEX_SHARE
+
     for name, drivers in SCENARIOS.items():
         ppe_implied = _steady_state_asset_ratio(
             drivers.capex_pct_revenue[-1],
             drivers.revenue_growth[-1],
             drivers.ppe_depreciation_rate,
+            share_reaching_asset=HIST_PPE_CAPEX_SHARE,
         )
         rou_implied = _steady_state_asset_ratio(
             drivers.rou_additions_pct_revenue[-1],
