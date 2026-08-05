@@ -4,10 +4,23 @@
 Greggs at the price the market puts on it today, financed it as far as this
 balance sheet allows, ran the model's own Base operating case for five years and
 sold at the multiple it paid, what would the equity return? That is a
-DISCIPLINE, not a recommendation. An LBO screen is the cheapest available test
-of whether a DCF's cash flows are real: a discounted cash flow can be flattered
-by a terminal value, but a sponsor return cannot, because it is driven by cash
-that actually pays down debt inside the hold period.
+DISCIPLINE, not a recommendation.
+
+**What it is NOT, and an earlier version of this docstring got this wrong.** It
+claimed an LBO screen is "the cheapest available test of whether a DCF's cash
+flows are real". **It is no such test here, because it consumes the same cash
+flows.** ``greggs_lbo_case()`` calls ``valuation.unlevered_fcf`` — the identical
+function the DCF discounts — so if that path is wrong, this sheet is wrong in
+exactly the same way and by exactly the same amount. It cannot corroborate the
+DCF and it cannot falsify it.
+
+What it genuinely adds is a **re-expression**: it takes the same cash flows and
+reports them LEVERED and WITHIN a five-year window, which surfaces two things the
+DCF's single share price hides — the timing of the cash flows (the explicit
+period's front-loaded capex burn) and the amount of value sitting outside the
+window (the terminal value). The 12.72% IRR below is not independent evidence
+about Greggs; it is the DCF's own explicit period, restated in a form where a
+negative early cash flow cannot be offset by a perpetuity.
 
 **What this module is NOT.** It is not a claim that Greggs is a live buyout
 candidate, and nothing here should be read as one. Two facts make that plain
@@ -61,6 +74,25 @@ Judgement, stated here rather than buried:
     standard conservative convention and, here, the only defensible one: the
     entry multiple is an observed market price and any other exit multiple
     would be an opinion dressed as an input.
+  * **NO CONTROL PREMIUM and NO TRANSACTION FEES.** Both are omissions that
+    flatter the return, and both are quantified rather than merely admitted:
+
+      - **Control premium.** A public-to-private is not struck at the screen
+        price. At a 30% premium to the £2,002.5m market capitalisation, entry EV
+        is £3,007.2m (8.5628x), the equity cheque rises to £1,602.4m, and the
+        return falls to **1.6585x / 10.65%** from 1.8194x / 12.72%. Note how
+        LITTLE it costs: because the exit is struck at the multiple PAID, a
+        higher entry multiple raises the exit EV proportionately, so the premium
+        largely self-cancels and only the extra equity in the denominator bites.
+        That self-cancellation is an artefact of the no-expansion convention, not
+        a real insulation from overpaying.
+      - **Fees.** At 2% of entry EV (£60.1m) funded from the equity cheque, the
+        30%-premium case falls further to **1.5985x / 9.84%** — about another
+        0.81 of a point. The 2% is a convention, not a sourced figure.
+
+    Neither is built into ``greggs_lbo_case()``; the caller supplies whatever
+    ``entry_ev`` it wants, and ``test_a_control_premium_and_fees_both_reduce_
+    the_return`` pins both sensitivities.
 
 --------------------------------------------------------------------------
 The cash sweep, and the one subtlety in it
@@ -131,11 +163,12 @@ over five years if the operating case merely disappoints. That asymmetry — a
 23.7% upside against a nil-to-negative downside, on a spread that is entirely
 operating — is the substantive output of the sheet.
 
-**This corroborates the DCF rather than contradicting it.** The DCF says the
-same thing in a different currency: 93-95% of the enterprise value sits in the
-terminal value precisely because the explicit period generates so little free
-cash. An LBO cannot borrow against a terminal value, so it simply reports that
-fact as a low IRR.
+**This restates the DCF rather than corroborating it** — see the opening of this
+docstring for why the distinction matters. The DCF says the same thing in a
+different currency: 93-95% of the enterprise value sits in the terminal value
+precisely because the explicit period generates so little free cash. An LBO
+cannot borrow against a terminal value, so the same fact reappears as a low IRR.
+Two views of one cash-flow path, not two pieces of evidence.
 """
 
 from __future__ import annotations

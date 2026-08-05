@@ -486,13 +486,14 @@ BASE = Drivers(
     # evidence at all.
     #
     #     exit_ev_ebitda = peer median EV/EBIT x (1 - terminal D&A / EBITDA)
-    #                    = 13.4277 x (1 - 52.9813%) = 6.3135
+    #                    = 13.4277 x (1 - 52.9813%) = 6.3135, shipped as 6.31
     #
     # **Why EV/EBIT is the peer statistic and not EV/EBITDA.** Post-IFRS 16
     # EV/EBITDA across the five peers spans 5.27x to 10.12x (1.92x) while
-    # D&A/EBITDA spans 21.4% to 60.8%; the multiple is largely reporting
-    # capital intensity. On EV/EBIT the same five span 9.13x to 14.48x
-    # (1.59x), and the median is robust: dropping Mitchells & Butlers, the one
+    # D&A/EBITDA spans 17.0% to 60.8%; the multiple is largely reporting
+    # capital intensity. On EV/EBIT the same five span 8.99x to 14.48x
+    # (1.61x) - somewhat tighter, not dramatically so - and the median is
+    # unmoved by dropping Mitchells & Butlers, the one
     # peer flagged as a property multiple rather than a trading one, moves it
     # only +0.13% (13.4277x -> 13.4450x).
     #
@@ -513,7 +514,7 @@ BASE = Drivers(
     # build enterprise value, so it cannot move the terminal D&A share it is
     # derived from. test_recalibrating_the_exit_multiple_leaves_the_terminal_
     # intensity_untouched pins that.
-    exit_ev_ebitda=6.3135,
+    exit_ev_ebitda=6.31,
 
     # Rate the revolver actually draws at. Deliberately NOT the blended
     # cost_of_debt above: the RCF genuinely borrows at the RCF rate, and the
@@ -646,7 +647,7 @@ SCENARIOS = {
         capex_pct_revenue=(0.1227, 0.1110, 0.0960, 0.0800, 0.0682),
         rou_delta=-0.004,
         # DERIVED on the same rule as BASE, at Bear's own terminal capital
-        # intensity: 13.4277 x (1 - 62.2578%) = 5.0679.
+        # intensity: 13.4277 x (1 - 62.2578%) = 5.0679, shipped as 5.07.
         #
         # NOT the old 8.5, and deliberately NOT "Base less 1.5". The +/-1.5
         # offsets were attached to a number that rested on nothing, so
@@ -656,7 +657,7 @@ SCENARIOS = {
         # than being imposed: Bear runs the heaviest asset base against the
         # smallest revenue, so its D&A absorbs the most EBITDA and its coherent
         # EBITDA multiple is the lowest. The spread narrows from 3.0 turns
-        # (8.5-11.5) to 2.17 turns (5.0679-7.2351) because capital intensity
+        # (8.5-11.5) to 2.17 turns (5.07-7.24) because capital intensity
         # varies less across the scenarios than the old offsets asserted.
         #
         # Bear is the one scenario comps.intensity_matched_multiple() CANNOT
@@ -664,7 +665,7 @@ SCENARIOS = {
         # peer available, so no peer brackets it and that function raises rather
         # than extrapolate. The EV/EBIT rule extends where the interpolation
         # cannot, which is why it is the rule for all three.
-        exit_ev_ebitda=5.0679,
+        exit_ev_ebitda=5.07,
     ),
     "Base": BASE,
     # Continued strong footfall/expansion case: growth holds up better,
@@ -739,12 +740,13 @@ SCENARIOS = {
         capex_pct_revenue=(0.1407, 0.1290, 0.1140, 0.0980, 0.0852),
         rou_delta=0.004,
         # DERIVED on the same rule as BASE, at Bull's own terminal capital
-        # intensity: 13.4277 x (1 - 46.1177%) = 7.2351. See the Bear note above
+        # intensity: 13.4277 x (1 - 46.1177%) = 7.2351, shipped as 7.24. See the
+        # Bear note above
         # for why the old +/-1.5 offsets were not carried forward.
         #
         # Bull IS inside the peer range, and the interpolation cross-check is
         # tighter here than at Base: comps.intensity_matched_multiple() gives
         # 7.2369x against this 7.2351x, 0.02% apart.
-        exit_ev_ebitda=7.2351,
+        exit_ev_ebitda=7.24,
     ),
 }

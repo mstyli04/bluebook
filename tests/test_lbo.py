@@ -109,6 +109,132 @@ def test_lease_liabilities_are_inside_entry_debt_not_beside_it():
     assert case.entry_leases / case.entry_ebitda == pytest.approx(1.2807, abs=1e-4)
 
 
+def test_there_is_no_net_deleveraging_across_the_hold():
+    """The headline finding of the LBO docstring, which had no assertion behind it.
+
+    The docstring says financial debt "ends at £967.1m, £12.1m HIGHER than the
+    £955.0m drawn at entry", that total debt including leases is £118.2m higher
+    at exit, and that the money multiple is therefore entirely an EBITDA-growth
+    story. In a project whose cardinal sin is a comment a later change falsifies,
+    the headline claim needs a line behind it.
+    """
+    case = _base_case()
+    assert case.financial_debt_closing[-1] > case.entry_financial_debt
+    assert case.financial_debt_closing[-1] - case.entry_financial_debt == pytest.approx(
+        12.05, abs=0.05
+    )
+    assert case.exit_debt - case.entry_debt == pytest.approx(118.22, abs=0.05)
+    # And the counterfactual that makes "entirely EBITDA growth" precise: held at
+    # entry debt, the money multiple would have been HIGHER, so de-gearing
+    # contributed nothing and in fact worked against the return.
+    flat_debt_mm = (case.exit_ev - case.entry_debt) / case.returns.entry_equity
+    assert flat_debt_mm == pytest.approx(1.9375, abs=1e-3)
+    assert flat_debt_mm > case.returns.money_multiple
+
+
+def test_the_peak_and_the_drawn_and_swept_amounts_are_pinned():
+    """The £1,098.0m FY2028 peak and the £143.0m drawn across FY2026-28."""
+    case = _base_case()
+    assert max(case.financial_debt_closing) == pytest.approx(1097.96, abs=0.05)
+    assert case.financial_debt_closing.index(max(case.financial_debt_closing)) == 2
+    drawn = -sum(c for c in case.cash_swept if c < 0.0)
+    swept = sum(c for c in case.cash_swept if c > 0.0)
+    assert drawn == pytest.approx(142.97, abs=0.05)
+    assert swept == pytest.approx(130.91, abs=0.05)
+    assert swept < drawn
+
+
+def test_the_scenario_returns_are_pinned():
+    """Bear 0.87x/-2.73% and Bull 2.89x/23.66%, both quoted in the docstring.
+
+    Bear losing capital is the asymmetry the sheet exists to show, so it is the
+    one number here that must not be allowed to drift silently.
+    """
+    entry_ev = greggs_trading_multiples(GREGGS_HISTORICALS).ev
+    expected = {
+        "Bear": (0.8707, -0.02731),
+        "Base": (1.8194, 0.12716),
+        "Bull": (2.8914, 0.23658),
+    }
+    for name, (mm, irr) in expected.items():
+        drivers = SCENARIOS[name]
+        model = build_model(GREGGS_HISTORICALS, drivers)
+        case = greggs_lbo_case(model, drivers, GREGGS_HISTORICALS, entry_ev)
+        assert case.returns.money_multiple == pytest.approx(mm, abs=1e-3), name
+        assert case.returns.irr == pytest.approx(irr, abs=1e-4), name
+    # Only Bull clears the hurdle; Bear loses capital outright.
+    assert expected["Bear"][0] < 1.0
+    assert expected["Base"][1] < SPONSOR_IRR_HURDLE
+    assert expected["Bull"][1] > SPONSOR_IRR_HURDLE
+
+
+def test_a_control_premium_and_fees_both_reduce_the_return():
+    """The two omissions that flatter the LBO, quantified.
+
+    A 30% control premium costs surprisingly little — 1.82x/12.72% becomes
+    1.66x/10.65% — because the exit is struck at the multiple PAID, so a higher
+    entry multiple raises the exit EV proportionately and the premium largely
+    self-cancels. That self-cancellation is an artefact of the no-expansion
+    convention, not real insulation from overpaying, and the test asserts it
+    explicitly so the mechanism is on the record.
+    """
+    drivers = SCENARIOS["Base"]
+    model = build_model(GREGGS_HISTORICALS, drivers)
+    g = greggs_trading_multiples(GREGGS_HISTORICALS)
+    base = greggs_lbo_case(model, drivers, GREGGS_HISTORICALS, g.ev)
+
+    premium_ev = g.market_cap * 1.30 + g.net_debt_incl_leases
+    with_premium = greggs_lbo_case(model, drivers, GREGGS_HISTORICALS, premium_ev)
+    assert with_premium.returns.money_multiple == pytest.approx(1.6585, abs=1e-3)
+    assert with_premium.returns.irr == pytest.approx(0.10648, abs=1e-4)
+    assert with_premium.returns.irr < base.returns.irr
+
+    # Self-cancellation: a 30% higher equity price cuts the money multiple by
+    # only ~9%, not ~30%, because the exit multiple rises with the entry one.
+    assert with_premium.entry_multiple / base.entry_multiple == pytest.approx(
+        1.2497, abs=1e-3
+    )
+    assert with_premium.returns.money_multiple / base.returns.money_multiple > 0.88
+
+    # Fees at 2% of entry EV, funded from the equity cheque. A convention.
+    fees = 0.02 * premium_ev
+    with_fees_mm = with_premium.returns.exit_equity / (
+        with_premium.returns.entry_equity + fees
+    )
+    assert fees == pytest.approx(60.14, abs=0.05)
+    assert with_fees_mm == pytest.approx(1.5985, abs=1e-3)
+    assert with_fees_mm ** 0.2 - 1.0 == pytest.approx(0.09836, abs=1e-4)
+    assert with_premium.returns.irr - (with_fees_mm ** 0.2 - 1.0) == pytest.approx(
+        0.00812, abs=1e-4
+    )
+
+
+def test_the_lbo_consumes_the_same_cash_flows_as_the_dcf():
+    """Why this sheet cannot corroborate the DCF, asserted rather than asserted-away.
+
+    The docstring used to claim an LBO screen tests whether a DCF's cash flows
+    are real. It cannot, because it calls the same function. This test makes the
+    dependency explicit so nobody restores the claim.
+    """
+    from bluebook.valuation import unlevered_fcf
+
+    drivers = SCENARIOS["Base"]
+    model = build_model(GREGGS_HISTORICALS, drivers)
+    case = greggs_lbo_case(
+        model, drivers, GREGGS_HISTORICALS, greggs_trading_multiples(GREGGS_HISTORICALS).ev
+    )
+    fcf = unlevered_fcf(model, drivers)
+    # Reconstruct the first year's sweep from the DCF's own FCF path.
+    expected = (
+        fcf[0]
+        + model.leases.additions[0]
+        - model.leases.principal_paid[0]
+        - model.leases.interest[0] * (1.0 - drivers.tax_rate)
+        - case.interest_rate * case.entry_financial_debt * (1.0 - drivers.tax_rate)
+    )
+    assert case.cash_swept[0] == pytest.approx(expected)
+
+
 def test_financial_debt_rises_for_three_years_before_it_falls():
     """The distribution-centre programme is still running at entry.
 

@@ -9,7 +9,7 @@ at.
 
 **It now SETS ``drivers.exit_ev_ebitda`` rather than merely arguing with it.**
 Owner ruling, fix round 1: the three scenario multiples are derived from this
-peer set by ``exit_multiple_from_peers()`` and are 5.0679 / 6.3135 / 7.2351,
+peer set by ``exit_multiple_from_peers()`` and are 5.07 / 6.31 / 7.24,
 replacing the judgement figures 8.5 / 10.0 / 11.5 that rested on nothing. That
 changed no valuation output — the headline price is struck on Gordon — and the
 residual disagreement with Gordon is deliberately left standing.
@@ -74,15 +74,50 @@ a reader to infer from a table that presents both at once.
   they should not be treated as carrying the same evidentiary weight as the
   Greggs numbers.
 
-What makes them nonetheless usable, and it is not nothing: **every peer's
-figures cross-check internally against five or six independently quoted lines
-from the same announcement.** SSP: 222.8 + 130.8 + 10.5 = 364.1 exactly against
-the printed £364.1m, and 269.1 - 222.8 = 46.3 against the stated IFRS 16 effect.
-Domino's: 309.2 - 24.6 = 284.6, 22.9 + 217.2 = 240.1, 7.9 + 6.6 + 14.1 = 28.6.
-Wetherspoon: 72.205 + 2.003 + 0.218 + 39.939 = 114.365 against the stated total,
-and 52.042 + 355.161 = 407.203. M&B: 843 + 434 = 1,277 and 96 + 3 + 36 = 135.
-Whitbread: 175.6 + 4,347.5 = 4,523.1 and 649 - 185 = 464. Figures that tie across
-that many separately reported lines are very unlikely to be confabulated.
+What partially offsets that: **every peer's figures cross-check internally
+against five or six independently quoted lines from the same announcement.**
+SSP: 222.8 + 130.8 + 10.5 = 364.1 exactly against the printed £364.1m, and
+269.1 - 222.8 = 46.3 against the stated IFRS 16 effect. Domino's:
+309.2 - 24.6 = 284.6, 22.9 + 217.2 = 240.1, and 7.9 + 6.6 + 7.6 + 0.6 = 22.7
+against the printed D&A-and-impairment line. Wetherspoon:
+72.205 + 2.003 + 0.218 + 39.939 = 114.365 against the stated total, and
+52.042 + 355.161 = 407.203. M&B: 843 + 434 = 1,277, 96 + 3 + 36 = 135, and
+322 + 8 = 330 against the printed adjusted operating profit. Whitbread:
+175.6 + 4,347.5 = 4,523.1 and 649 - 185 = 464.
+
+**What those ties do and do not bound — and this paragraph replaces a sentence
+that was false.** It previously read: "figures that tie across that many
+separately reported lines are very unlikely to be confabulated." That is true of
+CONFABULATION and true of TRANSCRIPTION, and it is worthless against the error
+that actually got through. Domino's EBIT shipped for one round at £105.3m,
+built as 133.9 - 28.6 with 28.6 = 7.9 + 6.6 + 14.1. **Every one of those figures
+is real and the arithmetic is exact.** It was wrong because 14.1 is TOTAL
+amortisation while 133.9 is an UNDERLYING measure, so the subtraction mixed two
+bases — and the company's own printed bridge (133.9 - 22.7 = 111.2) says so.
+EV/EBIT was overstated 5.6%.
+
+So, precisely:
+
+* internal ties bound **transcription** error — a digit typed wrong, a component
+  omitted from a sum, a figure read off the wrong column;
+* they bound **nothing at all** about whether the right figure was selected. A
+  basis-selection error produces an arithmetically perfect table.
+* Neither the comment audit nor the mutation sweep could catch it, and neither
+  ever will: the audit re-checks each claim against the value beside it, and the
+  value beside it was self-consistent; mutation testing perturbs shipped values
+  and asks whether a test notices, which says nothing about whether the shipped
+  value was the right line to take.
+* The only thing that catches a basis-selection error is **reading the
+  company's own reconciliation** and preferring its printed subtotal to any
+  build-up. Where a peer prints the subtotal, this module now uses it and says
+  so; where it does not, the build-up is written out with the basis of every
+  component named.
+
+One residual defence, and it is weak: the old comment was **self-refuting on its
+own face** — it said the £28.6m was added back to a statutory PBIT of £101.1m,
+and 101.1 + 28.6 = 129.7, not the 133.9 on the line above. A reader checking the
+comment against itself, rather than each figure against its source, would have
+found it. That is now the standard applied to every peer comment here.
 
 **Two residuals are left standing rather than absorbed**, both flagged again at
 the figure itself: **SSP £1.3m** (0.19% of its EBITDA — its pre-IFRS 16 EBITDA
@@ -125,14 +160,14 @@ where each one breaks rather than let "UK food and hospitality" do the work.
   mechanics are as dominant as Greggs'. Breaks on: the product is a room-night,
   and demand is accommodation not food.
 * **Mitchells & Butlers — weight DOWN.** UK eating-out demand, but a largely
-  freehold estate carried at valuation, so its 6.45x is partly a property
+  freehold estate carried at valuation, so its 6.38x is partly a property
   multiple rather than a trading one, and the format is sit-down dining. It is
-  also the one peer whose EV/EBIT (9.13x) is far off the other four, which is
+  also the one peer whose EV/EBIT (8.99x) is far off the other four, which is
   consistent with property value sitting in EV without a matching earnings
   stream.
 * **Domino's Pizza Group — weight DOWN hardest.** An asset-light FRANCHISOR:
   revenue is royalties and supply-chain sales to franchisees, and the
-  franchisees hold the shop leases, which is why its D&A/EBITDA is 21.4%
+  franchisees hold the shop leases, which is why its D&A/EBITDA is 17.0%
   against Greggs' 47.7%. It is in the set because it is the only other listed
   UK food-to-go brand, but **its 10.12x should be read as an upper bound on
   franchise-model economics, not as a comparable capital structure.** Dropping
@@ -161,26 +196,80 @@ What the set actually says
 Post-IFRS 16 EV/EBITDA, at the prices in ``PRICE_OBSERVATION_DATE``:
 
     SSP Group             5.27x        D&A/EBITDA  60.8%
-    Mitchells & Butlers   6.45x                    29.3%
+    Mitchells & Butlers   6.38x                    29.0%
     J D Wetherspoon       7.54x  <- median         43.9%
     Whitbread             8.73x                    39.7%
-    Domino's Pizza Group 10.12x                    21.4%
+    Domino's Pizza Group 10.12x                    17.0%
 
 That is a 1.92x spread between the cheapest and dearest name in one sector, and
-the third column is most of the explanation. **Post-IFRS 16 EV/EBITDA in this
-sector is substantially a reading of capital intensity, not of rating.** The
-same five names on EV/EBIT run 9.13x (M&B) to 14.48x (Whitbread), a 1.59x
-spread, with a median of 13.43x. ``test_ev_ebit_is_a_much_tighter_spread_than_
-ev_ebitda`` pins the comparison.
+the third column is a large part of the explanation. **Post-IFRS 16 EV/EBITDA in
+this sector is substantially a reading of capital intensity, not of rating.** The
+same five names on EV/EBIT run 8.99x (M&B) to 14.48x (Whitbread), a **1.61x**
+spread, with a median of 13.43x. ``test_ev_ebit_is_a_somewhat_tighter_spread_
+than_ev_ebitda`` pins the comparison.
+
+**1.61x against 1.92x is SOMEWHAT tighter, not much tighter, and an earlier
+version of this docstring overstated it.** It claimed 1.59x, which depended on
+Mitchells & Butlers being carried on its own statutory-based EBITDA measure while
+the other four were on underlying — the basis inconsistency this round corrected.
+Putting M&B on underlying moved its EV/EBIT from 9.13x to 8.99x and widened the
+spread. Correcting Domino's EBIT (see below) moved its EV/EBIT from 12.87x to
+12.19x, widening it again. The motivating observation survives — capital
+intensity explains a real part of the EV/EBITDA dispersion — but it is weaker
+than first stated, and the test now asserts the weaker truth.
 
 Greggs itself, at 1,964.0p, is 6.85x EV/EBITDA and 13.10x EV/EBIT on FY2025.
-Against the medians that is 9.1% cheap on EBITDA and 2.4% cheap on EBIT — the
-EBITDA discount is almost entirely the capital-intensity artefact, because
-Greggs' own D&A/EBITDA is 47.7%, above four of the five peers. On P/E Greggs is
-16.39x against a peer median of 13.24x, i.e. at a PREMIUM, which is the same
-fact seen from the other side: Greggs carries net CASH excluding leases, so its
-equity is less geared than the peers' and capitalises the same enterprise more
-dearly.
+Against the medians that is 9.1% cheap on EBITDA and 2.4% cheap on EBIT.
+**But the 2.4% is not a like-for-like comparison — see the impairment
+asymmetry immediately below, which puts the honest figure at 6.0% cheap.** On
+P/E Greggs is 16.39x against a peer median of 13.24x, i.e. at a PREMIUM, which
+is the same fact seen from the other side: Greggs carries net CASH excluding
+leases, so its equity is less geared than the peers' and capitalises the same
+enterprise more dearly.
+
+--------------------------------------------------------------------------
+IMPAIRMENT ASYMMETRY on EBIT — a known bias, and it flatters the model
+--------------------------------------------------------------------------
+``inputs/greggs.py`` folds net impairment into ``depreciation_ppe`` and
+``depreciation_rou``, a Task 3 convention adopted so the FCF bridge does not
+double-count non-cash write-downs against capex. On **EBITDA** that is harmless
+and already noted above: the add-back puts Greggs on the same pre-impairment
+footing as the peers' underlying measures. **On EBIT it runs the other way and
+was not flagged.** Greggs' EBIT is struck AFTER £6.9m of FY2025 impairment;
+every peer's underlying EBIT is struck BEFORE its impairments. The two are not
+comparable, and the direction is not neutral:
+
+    Greggs EBIT as the model carries it      £183.7m  ->  EV/EBIT 13.10x, 2.4% cheap
+    Greggs EBIT on the peers' basis (+£6.9m) £190.6m  ->  EV/EBIT 12.63x, 6.0% cheap
+
+The same bias runs through the derived exit multiple, because Task 9's
+``ppe_depreciation_rate`` (14.23%) and ``rou_depreciation_rate`` (17.61%) were
+anchored on FY2025 depreciation figures that INCLUDE impairment, so the terminal
+D&A share is overstated too:
+
+                     terminal D&A/EBITDA    shipped multiple   residual vs Gordon
+    Bear   as built        62.26%                5.07x              +34.67%
+           peers' basis    59.74%                5.41x              +43.70%
+    Base   as built        52.98%                6.31x              +21.65%
+           peers' basis    50.84%                6.60x              +27.24%
+    Bull   as built        46.12%                7.24x              +16.05%
+           peers' basis    44.25%                7.49x              +20.06%
+
+**Direction, stated plainly because it cuts against the model: the bias
+UNDERSTATES the derived exit multiple by 3.46% (Bull) to 6.67% (Bear), and
+therefore UNDERSTATES the residual disagreement with Gordon.** On Base the honest
+residual is +27.24%, not the +21.65% the shipped figures report. The bias
+flatters the model's internal coherence, which is exactly the kind of bias that
+has to be named by whoever finds it rather than left for a reader to discover.
+
+**Not adjusted for**, deliberately. The root cause is the Task 3 inputs
+convention carried through Task 9's depreciation rates; correcting it means
+splitting impairment out of the depreciation fields, which changes the fixed-asset
+schedule, the FCF bridge and the terminal anchors. That is a change to earlier
+tasks' interfaces and is out of scope here. It is disclosed with its magnitude
+and its sign, and ``greggs_trading_multiples()`` returns the peers-consistent
+EBIT alongside the as-reported one so the gap is computable rather than
+prose-only.
 
 --------------------------------------------------------------------------
 The basis conversion, and why the handover's estimate was wrong
@@ -188,7 +277,7 @@ The basis conversion, and why the handover's estimate was wrong
 **Everything in this section and the next concerns the SUPERSEDED driver
 values of 8.5 / 10.0 / 11.5.** They are kept because they are the evidence
 that forced the recalibration, and because the conversion arithmetic is a
-finding in its own right. The shipped driver is 5.0679 / 6.3135 / 7.2351 and
+finding in its own right. The shipped driver is 5.07 / 6.31 / 7.24 and
 is already post-IFRS 16 — do NOT put it through ``post_ifrs16_multiple()``.
 
 Task 9 handed over the expectation that a 10x multiple struck pre-IFRS 16 is
@@ -236,6 +325,19 @@ simply wrong:
    already decelerated to 2% in perpetuity. A terminal multiple below a
    current trading multiple is what the arithmetic of a fading growth rate
    produces, not evidence of an error.
+
+   **And the shipped rule does not apply that fade — a concession that cuts
+   against the derivation.** ``exit_multiple_from_peers()`` takes the peers'
+   TRAILING EV/EBIT and applies it to the TERMINAL year with no deceleration
+   adjustment at all. So the argument in this paragraph, which is used to defend
+   Gordon sitting below the peers, applies with equal force against the derived
+   exit multiple: some part of the 6.31x is growth the terminal year does not
+   have. That means **part of the residual gap attributed below to
+   reinvestment-intensity opinion is really this omission**, and the split
+   between the two is not quantified here — fading the peer multiple properly
+   would need a growth rate and a duration for each peer, none of which is
+   sourced. The residual is therefore an upper bound on the reinvestment
+   disagreement, not a measurement of it.
 
 2. **On EV/EBIT the gap is a quarter of the size.** Gordon's Base terminal
    value is 11.03x the re-based terminal EBIT of £229.6m, against a peer
@@ -307,7 +409,7 @@ driver has never moved.
   a capital-intensity-matched peer read of 6.32x for Base.
   **Owner ruling, fix round 1: it is now derived.** See
   ``exit_multiple_from_peers()`` and the derivation beside each scenario in
-  ``assumptions.py``. The shipped multiples are **5.0679 / 6.3135 / 7.2351**,
+  ``assumptions.py``. The shipped multiples are **5.07 / 6.31 / 7.24**,
   each being the peer median EV/EBIT of 13.4277x read at that scenario's own
   terminal D&A/EBITDA (62.26% / 52.98% / 46.12%). The old +/-1.5 offsets were
   NOT carried forward — they were attached to a number resting on nothing — so
@@ -335,6 +437,40 @@ driver has never moved.
   like-for-like validation, so it is worth exactly as much as that.
 
 --------------------------------------------------------------------------
+WHAT THE "EXIT MULTIPLE" BAR NOW CONTAINS — read this before Tasks 14 and 16
+--------------------------------------------------------------------------
+Because ``EV/EBITDA == EV/EBIT x (1 - D&A/EBITDA)`` is an identity, and because
+the derived driver IS ``peer median EV/EBIT x (1 - terminal D&A/EBITDA)``,
+
+    terminal_value_exit_multiple  ==  peer median EV/EBIT  x  terminal EBIT
+
+exactly, in all three scenarios. The EBITDA in the calculation cancels. **The
+exit-multiple terminal value is no longer an EBITDA method at all — it is one
+peer's EV/EBIT multiple applied to the model's own terminal EBIT.** With the
+shipped two-decimal literals the identity holds to within ±0.07% (the rounding);
+``test_the_exit_multiple_tv_is_identically_peer_ev_ebit_times_terminal_ebit``
+pins it.
+
+Three consequences for anyone presenting this:
+
+* **The football field's two DCF bars are less independent than they look.** One
+  is labelled "DCF (Gordon)" and one "DCF (exit multiple)", but the second now
+  contains no information beyond J D Wetherspoon's EV/EBIT of 13.4277x and the
+  model's own terminal EBIT. Labelling it "exit multiple" without saying so
+  invites a reader to treat it as a second opinion when it is one observation.
+* **It is a single-peer number.** The median of five is the third observation,
+  and dropping any of the three highest names moves it about -4.6% (see
+  ``test_the_peer_median_ev_ebit_is_robust_to_dropping_one_peer``). That is the
+  honest error bar on the whole exit-multiple bar.
+* **Bear's derived multiple of 5.07x sits BELOW every peer's EV/EBITDA**, the
+  lowest of which is SSP at 5.27x. That is not a contradiction — it is the
+  correct output of applying a peer EV/EBIT to a business more capital-intensive
+  than any peer in the set — but it does mean the Bear bar is an extrapolation
+  beyond the observed EV/EBITDA range in both directions: its input intensity
+  (62.26%) is above every peer's and its output multiple is below every peer's.
+  ``test_bears_derived_multiple_sits_below_every_peer_ev_ebitda`` records it.
+
+--------------------------------------------------------------------------
 The 52-week range, which is the one figure that goes stale
 --------------------------------------------------------------------------
 ``GREGGS_52_WEEK_LOW`` / ``GREGGS_52_WEEK_HIGH`` and ``GREGGS_SHARE_PRICE``
@@ -358,6 +494,15 @@ from bluebook.inputs.schema import HistoricalYear, Sourced
 
 PENCE_PER_POUND = 100.0
 
+# FY2025 net impairment, as recorded in the comments beside `depreciation_ppe`
+# and `depreciation_rou` in inputs/greggs.py. Named here rather than inlined
+# because the impairment asymmetry disclosure in the module docstring turns on
+# them, and because inputs/greggs.py carries them only in prose - there is no
+# impairment field on HistoricalYear to read them from, which is itself part of
+# why the asymmetry exists.
+FY2025_NET_IMPAIRMENT_PPE = 3.9    # FY2025 AR p.148 (Note 3); 5.5 charge less 1.6 release
+FY2025_NET_IMPAIRMENT_ROU = 3.0    # FY2025 AR p.148 (Note 3); 4.9 charge less 1.9 release
+
 # Tolerance on the internal arithmetic of a Peer, £m. The literals below are
 # quoted to two decimals against inputs carried to more, so a tie can be out by
 # a few thousandths of a million and still be a correct transcription.
@@ -368,7 +513,14 @@ _TIE_TOLERANCE = 0.01
 # Market observations — one snapshot, one date
 # ---------------------------------------------------------------------------
 
-PRICE_OBSERVATION_DATE = "5 August 2026"
+PRICE_OBSERVATION_DATE = "5 August 2026, 11:45-11:59 GMT"
+
+#: The individual quote times inside that window, recorded per peer in each
+#: ``source`` string. The window is 14 minutes wide, so the six quotes are not
+#: strictly simultaneous; on a normal trading day that is immaterial next to
+#: the seven-month gap between these prices and the balance sheets they are
+#: divided into, but it is recorded rather than smoothed.
+PRICE_OBSERVATION_WINDOW_MINUTES = 14
 
 _QUOTE = "stockanalysis.com delayed LSE quote, retrieved 5 August 2026"
 
@@ -472,7 +624,8 @@ PEERS: list[Peer] = [
         net_income=-74.4,
         source=(
             "SSP Group plc, '2025 Full Year Results Announcement' RNS, 4 December 2025, "
-            "year ended 30 September 2025; prices per PRICE_OBSERVATION_DATE"
+            "year ended 30 September 2025; price stockanalysis.com LON:SSPG "
+            "5 August 2026 11:45 GMT"
         ),
     ),
     Peer(
@@ -489,16 +642,39 @@ PEERS: list[Peer] = [
         lease_liabilities=240.1,
         minority_interests=-0.6,     # net liability position at 28 December 2025
         ev=1355.029,                 # 830.929 + 524.7 - 0.6
-        # Underlying EBITDA as DPG states it, £133.9m, and it IS post-IFRS 16:
-        # the £28.6m added back to statutory PBIT of £101.1m is PP&E 7.9 +
-        # right-of-use 6.6 + intangible amortisation 14.1. EBIT is the same
-        # measure before that D&A: 133.9 - 28.6 = 105.3.
+        # Underlying EBITDA as DPG states it, £133.9m, and it IS post-IFRS 16.
+        # EBIT is DPG's OWN PRINTED LINE, not a build-up. The income statement
+        # bridges:
+        #     "Underlying EBITDA 133.9"
+        #     "Depreciation, amortisation and impairment (22.7)"
+        #     "Underlying EBIT 111.2"
+        # and the £22.7m is PP&E depreciation 7.9 + right-of-use depreciation
+        # 6.6 + underlying amortisation 7.6 + underlying impairment 0.6 = 22.7
+        # exactly.
+        #
+        # **This corrected a CRITICAL error, and the shape of it is worth
+        # keeping.** An earlier version built EBIT as 133.9 - 28.6 = 105.3,
+        # where 28.6 = 7.9 + 6.6 + 14.1. Every one of those three figures is
+        # real and they sum correctly, but 14.1 is TOTAL amortisation:
+        # 7.6 underlying + 6.5 of reacquired-rights amortisation, which is
+        # non-underlying. So the build-up mixed an underlying operating measure
+        # with total D&A components, understating EBIT and overstating EV/EBIT
+        # by 5.6%. The old comment was self-refuting on its own face - it said
+        # the 28.6 was added back to statutory PBIT of 101.1, and 101.1 + 28.6
+        # is 129.7, not the 133.9 on the line above it. Nothing in the test
+        # suite or the internal cross-ties could catch it, because it was a
+        # BASIS-SELECTION error and not a transcription error. See the
+        # PROVENANCE section for what that means for the rest of this table.
+        #
+        # Non-underlying items excluded from the £111.2m, per the announcement:
+        # reacquired rights amortisation 6.5 and the Shorecal impairment 10.4.
         ebitda=133.9,
-        ebit=105.3,
+        ebit=111.2,
         net_income=58.6,             # attributable to equity holders; £59.0m group total
         source=(
             "Domino's Pizza Group plc, 'Full year results for the 52 weeks ended 28.12.25' "
-            "RNS, 10 March 2026; prices per PRICE_OBSERVATION_DATE"
+            "RNS, 10 March 2026; price stockanalysis.com LON:DOM "
+            "5 August 2026 11:59 GMT"
         ),
     ),
     Peer(
@@ -528,7 +704,8 @@ PEERS: list[Peer] = [
         net_income=68.0,             # profit for the period; no minority interest
         source=(
             "J D Wetherspoon plc, 'Preliminary Results' RNS, 3 October 2025, "
-            "52 weeks ended 27 July 2025; prices per PRICE_OBSERVATION_DATE"
+            "52 weeks ended 27 July 2025; price stockanalysis.com LON:JDW "
+            "5 August 2026 11:54 GMT"
         ),
     ),
     Peer(
@@ -543,21 +720,37 @@ PEERS: list[Peer] = [
         lease_liabilities=434.0,
         minority_interests=0.0,
         ev=2966.731,                 # 1,689.731 + 1,277.0
-        # "EBITDA before movements in the valuation of the property portfolio",
-        # £460m, reconciled by the company from statutory operating profit of
-        # £322m plus £138m of "depreciation, amortisation and movements in the
-        # valuation of the property portfolio". Post-IFRS 16: right-of-use
-        # depreciation of £36m is inside the add-back, and M&B quotes its own
-        # leverage as 2.7x EBITDA INCLUDING lease liabilities against this
-        # same figure. EBIT nets off the £135m of pure D&A (PP&E 96 +
-        # intangibles 3 + right-of-use 36), leaving the £3m property valuation
-        # movement in EBITDA and in EBIT alike: 460 - 135 = 325.
-        ebitda=460.0,
-        ebit=325.0,
+        # UNDERLYING basis, to match the other four. EBIT is the company's
+        # printed "Adjusted operating profit of £330m"; EBITDA adds the £135m of
+        # D&A (PP&E 96 + intangibles 3 + right-of-use 36): 330 + 135 = 465.
+        #
+        # **This corrected a basis inconsistency.** An earlier version used
+        # M&B's own "EBITDA before movements in the valuation of the property
+        # portfolio" of £460m and an EBIT of 325. That figure is struck off
+        # STATUTORY operating profit of £322m (322 + 138 = 460, where the £138m
+        # is "depreciation, amortisation and movements in the valuation of the
+        # property portfolio", i.e. the £135m of D&A plus the £3m net adverse
+        # property revaluation). It therefore still carried £5m of separately
+        # disclosed items that the other four peers' underlying measures
+        # exclude, so the set was NOT on the identical basis the module claimed.
+        #
+        # The £8m of separately disclosed items reconciles 322 to 330, and
+        # splits: the four impairment/revaluation lines (freehold reversal +11,
+        # short leasehold -5, right-of-use -8, goodwill -1) net to the -3
+        # property movement already outside the £460m, leaving -3 contingent
+        # consideration, -3 pension past-service and +1 property disposals = -5
+        # inside it. 465 - 460 = 5 ties.
+        #
+        # Post-IFRS 16 either way: right-of-use depreciation of £36m is in the
+        # add-back, and M&B quotes its own leverage as 2.7x EBITDA INCLUDING
+        # lease liabilities.
+        ebitda=465.0,
+        ebit=330.0,
         net_income=177.0,            # profit for the period
         source=(
             "Mitchells & Butlers plc, 'Full Year Results' RNS, 28 November 2025, "
-            "52 weeks ended 27 September 2025; prices per PRICE_OBSERVATION_DATE"
+            "52 weeks ended 27 September 2025; price stockanalysis.com LON:MAB "
+            "5 August 2026 11:52 GMT"
         ),
     ),
     Peer(
@@ -589,7 +782,8 @@ PEERS: list[Peer] = [
         net_income=212.9,            # statutory profit for the year
         source=(
             "Whitbread PLC, 'Preliminary Results Announcement' RNS, 30 April 2026, "
-            "52 weeks ended 26 February 2026; prices per PRICE_OBSERVATION_DATE"
+            "52 weeks ended 26 February 2026; price stockanalysis.com LON:WTB "
+            "5 August 2026 11:58 GMT"
         ),
     ),
 ]
@@ -648,9 +842,9 @@ def exit_multiple_from_peers(terminal_da_over_ebitda: float, peers: list[Peer]) 
     literals back to this function so neither can drift.
 
     **Why the peer statistic is EV/EBIT and not EV/EBITDA.** EV/EBITDA across
-    the five spans 5.27x-10.12x (1.92x) while D&A/EBITDA spans 21.4%-60.8%: the
+    the five spans 5.27x-10.12x (1.92x) while D&A/EBITDA spans 17.0%-60.8%: the
     EBITDA multiple is substantially reporting capital intensity. On EV/EBIT the
-    same five span 9.13x-14.48x (1.59x) and the median is robust — dropping
+    same five span 8.99x-14.48x (1.61x) and the median is unchanged by dropping
     Mitchells & Butlers, the one peer whose multiple is part property valuation,
     moves it +0.13%.
 
@@ -678,15 +872,15 @@ def intensity_matched_multiple(da_over_ebitda: float, peers: list[Peer]) -> floa
     """Peer EV/EBITDA interpolated at a given D&A/EBITDA, post-IFRS 16.
 
     The peer set's EV/EBITDA spans 5.27x to 10.12x while its D&A/EBITDA spans
-    21.4% to 60.8%, and the two move together far more than the sector label
+    17.0% to 60.8%, and the two move together far more than the sector label
     would suggest. Comparing Greggs' terminal EBITDA multiple to the raw median
     therefore compares two different capital intensities. This reads the peer
     curve at the intensity actually in question.
 
     Linear interpolation between the two BRACKETING peers, sorted on
     D&A/EBITDA. Deliberately local rather than fitted, because the relationship
-    is NOT monotonic across the whole set — Mitchells & Butlers at 29.3% trades
-    at 6.45x while Whitbread at 39.7% trades at 8.73x, the wrong way round — so
+    is NOT monotonic across the whole set — Mitchells & Butlers at 29.0% trades
+    at 6.38x while Whitbread at 39.7% trades at 8.73x, the wrong way round — so
     a single fitted line through five points would smooth over a genuine
     inversion and give false precision. A local interpolation claims only what
     the two nearest observations support.
@@ -797,6 +991,13 @@ class GreggsTradingMultiples:
     ev_ebitda: float
     ev_ebit: float
     pe: float
+    # The impairment asymmetry, made computable rather than prose-only. Greggs'
+    # EBIT is struck after impairment because inputs/greggs.py folds it into the
+    # depreciation fields; every peer's underlying EBIT is struck before. These
+    # three fields expose the gap so a caller can compare like with like.
+    impairment: float               # £m, FY2025 net impairment inside D&A
+    ebit_pre_impairment: float      # £m, the peers-consistent EBIT
+    ev_ebit_pre_impairment: float   # the peers-consistent EV/EBIT
 
 
 def greggs_trading_multiples(historicals: list[HistoricalYear]) -> GreggsTradingMultiples:
@@ -829,6 +1030,12 @@ def greggs_trading_multiples(historicals: list[HistoricalYear]) -> GreggsTrading
     )
     ev = market_cap + net_debt
     net_income = HIST_NET_INCOME[-1]
+    # FY2025 net impairment, taken from the amounts inputs/greggs.py records
+    # beside depreciation_ppe (3.9) and depreciation_rou (3.0). It is inside
+    # `da` above, and therefore deducted from `ebit`, which is what makes `ebit`
+    # incomparable with the peers' pre-impairment underlying EBIT.
+    impairment = FY2025_NET_IMPAIRMENT_PPE + FY2025_NET_IMPAIRMENT_ROU
+    ebit_pre_impairment = ebit + impairment
     return GreggsTradingMultiples(
         share_price_pence=GREGGS_SHARE_PRICE.value,
         market_cap=market_cap,
@@ -840,4 +1047,7 @@ def greggs_trading_multiples(historicals: list[HistoricalYear]) -> GreggsTrading
         ev_ebitda=ev / ebitda,
         ev_ebit=ev / ebit,
         pe=market_cap / net_income,
+        impairment=impairment,
+        ebit_pre_impairment=ebit_pre_impairment,
+        ev_ebit_pre_impairment=ev / ebit_pre_impairment,
     )

@@ -771,7 +771,7 @@ def test_implied_share_price_is_ordered_bull_above_base_above_bear():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize(
-    "name,ratio", [("Bear", 1.3462), ("Base", 1.2172), ("Bull", 1.1597)]
+    "name,ratio", [("Bear", 1.3467), ("Base", 1.2165), ("Bull", 1.1605)]
 )
 def test_gordon_still_implies_a_lower_exit_multiple_than_the_driver(name, ratio):
     """Documents the REMAINING disagreement rather than papering over it.
@@ -781,7 +781,7 @@ def test_gordon_still_implies_a_lower_exit_multiple_than_the_driver(name, ratio)
     disagreement exceeded 1.5x in every scenario, when `exit_ev_ebitda` was
     8.5 / 10.0 / 11.5 — figures set against pre-IFRS-16 intuition and resting on
     nothing. Those are now DERIVED from the Task 10 peer set at each scenario's
-    own terminal capital intensity: 5.0679 / 6.3135 / 7.2351. See
+    own terminal capital intensity: 5.07 / 6.31 / 7.24. See
     `comps.exit_multiple_from_peers()`.
 
     The disagreement narrowed from 1.84x-2.26x to **1.16x-1.35x** and is pinned

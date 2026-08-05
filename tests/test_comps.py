@@ -113,9 +113,14 @@ _EXPECTED = {
     # sweep found.
     #                        EV/EBITDA  EV/EBIT   mcap/NI    leases / net debt
     "SSP Group":            (5.2717,   13.4623,   -21.7607,  0.6840),
-    "Domino's Pizza Group": (10.1197,  12.8683,    14.1797,  0.4576),
+    # Domino's EV/EBIT was 12.8683 against an EBIT of 105.3 built as
+    # 133.9 - 28.6. That was a basis-selection error: the company prints
+    # "Underlying EBIT 111.2" off a D&A-and-impairment line of (22.7).
+    "Domino's Pizza Group": (10.1197,  12.1855,    14.1797,  0.4576),
     "J D Wetherspoon":      (7.5376,   13.4277,    12.3046,  0.3606),
-    "Mitchells & Butlers":  (6.4494,    9.1284,     9.5465,  0.3399),
+    # M&B moved onto the underlying basis the other four use: EBITDA 465.0
+    # (330 + 135) rather than its own statutory-based 460.0, EBIT 330.0.
+    "Mitchells & Butlers":  (6.3801,    8.9901,     9.5465,  0.3399),
     "Whitbread":            (8.7349,   14.4820,    19.5716,  0.8645),
 }
 
@@ -142,19 +147,31 @@ def test_exactly_one_peer_is_loss_making():
 # multiples()
 # ---------------------------------------------------------------------------
 
-def test_ev_ebit_is_a_much_tighter_spread_than_ev_ebitda():
-    """The finding the sheet turns on.
+def test_ev_ebit_is_a_somewhat_tighter_spread_than_ev_ebitda():
+    """The motivating observation, asserted at its true strength.
 
-    Post-IFRS 16 EV/EBITDA spans 5.27x to 10.12x across five names in one
-    sector, because D&A/EBITDA spans 21% to 61%. On EV/EBIT the same five
-    names span 9.13x to 14.48x. The EBITDA multiple is largely reporting
-    capital intensity; the EBIT multiple is not.
+    Post-IFRS 16 EV/EBITDA spans 5.27x to 10.12x (1.92x) across five names in
+    one sector, because D&A/EBITDA spans 17% to 61%. On EV/EBIT the same five
+    span 8.99x to 14.48x (1.61x).
+
+    **This test previously asserted the EBIT spread was under 1.6x, and called
+    it "much tighter".** That was true only while Mitchells & Butlers sat on its
+    own statutory-based EBITDA while the other four were on underlying, and
+    while Domino's EBIT was understated by a basis error. Both corrected, the
+    spread is 1.6109x. The observation survives — capital intensity explains a
+    real part of the EV/EBITDA dispersion — but it is SOMEWHAT tighter, not much
+    tighter, and the bounds below are two-sided so it cannot silently drift back.
     """
     m = multiples(PEERS)
     ebitda_spread = m["ev_ebitda"]["max"] / m["ev_ebitda"]["min"]
     ebit_spread = m["ev_ebit"]["max"] / m["ev_ebit"]["min"]
-    assert ebitda_spread > 1.9
-    assert ebit_spread < 1.6
+    assert ebitda_spread == pytest.approx(1.9196, abs=1e-4)
+    assert ebit_spread == pytest.approx(1.6109, abs=1e-4)
+    assert ebit_spread < ebitda_spread
+    # Two-sided: not "much" tighter. If a later change makes the EBIT spread
+    # look dramatically tighter again, that is a signal to re-check the bases,
+    # not a licence to restore the stronger claim.
+    assert 1.55 < ebit_spread < 1.70
 
 
 def test_pe_excludes_the_loss_making_peer():
@@ -249,7 +266,7 @@ def test_conversion_of_the_superseded_base_multiple_moves_it_by_under_one_turn()
     # And the shipped driver is 2.72 turns below the converted old one: the
     # basis conversion alone would not have got there, which is the whole
     # reason the driver had to be re-derived rather than merely restated.
-    assert converted - drivers.exit_ev_ebitda == pytest.approx(2.7173, abs=1e-3)
+    assert converted - drivers.exit_ev_ebitda == pytest.approx(2.7208, abs=1e-3)
 
 
 def test_the_shipped_driver_is_already_post_ifrs16_and_must_not_be_converted():
@@ -269,7 +286,7 @@ def test_the_shipped_driver_is_already_post_ifrs16_and_must_not_be_converted():
         lease_liabilities=leases.closing_liability[-1],
         fixed_lease_payments=leases.principal_paid[-1] + leases.interest[-1],
     )
-    assert wrong == pytest.approx(6.1214, abs=1e-4)
+    assert wrong == pytest.approx(6.1186, abs=1e-4)
     assert wrong < drivers.exit_ev_ebitda
 
 
@@ -306,10 +323,13 @@ def test_the_shipped_exit_multiples_are_the_peer_derived_ones():
     drifting apart — the same literal-plus-covering-test pattern the HIST_*
     constants use.
     """
-    expected = {"Bear": 5.0679, "Base": 6.3135, "Bull": 7.2351}
+    # Two decimals, with a tolerance of 5e-3 — exactly the rounding a
+    # two-decimal literal can carry. Four decimals implied a precision the
+    # underlying five-observation median does not have.
+    expected = {"Bear": 5.07, "Base": 6.31, "Bull": 7.24}
     for name, literal in expected.items():
         derived = exit_multiple_from_peers(_terminal_intensity(name), PEERS)
-        assert derived == pytest.approx(literal, abs=5e-5), name
+        assert derived == pytest.approx(literal, abs=5e-3), name
         assert SCENARIOS[name].exit_ev_ebitda == pytest.approx(literal), name
 
 
@@ -326,7 +346,7 @@ def test_the_derived_exit_multiples_are_ordered_bull_above_base_above_bear():
     assert intensities[0] > intensities[1] > intensities[2]
     # The spread narrowed relative to the discarded +/-1.5 offsets (3.0 turns),
     # because capital intensity varies less across scenarios than they asserted.
-    assert bull - bear == pytest.approx(2.1672, abs=1e-4)
+    assert bull - bear == pytest.approx(2.17, abs=5e-3)
 
 
 def test_recalibrating_the_exit_multiple_leaves_the_terminal_intensity_untouched():
@@ -370,18 +390,35 @@ def test_exit_multiple_from_peers_rejects_an_impossible_intensity():
         exit_multiple_from_peers(-0.01, PEERS)
 
 
-def test_the_peer_median_ev_ebit_is_robust_to_dropping_the_property_outlier():
-    """The derivation rests on the median EV/EBIT, so its robustness matters.
+def test_the_peer_median_ev_ebit_is_robust_to_dropping_one_peer():
+    """The derivation rests on the median EV/EBIT, so its stability matters —
+    and the honest measure is the WORST drop-one case, not the best.
 
-    Mitchells & Butlers at 9.13x is the one peer flagged as partly a property
-    multiple. Dropping it moves the median EV/EBIT by 0.13%, which is why the
-    derivation is not sensitive to that judgement call.
+    **An earlier version of this test dropped only Mitchells & Butlers and
+    asserted the median moved 0.13%.** That was true but nearly vacuous: M&B is
+    an extreme observation in a five-set, so dropping it cannot move the median
+    much. Dropping any of the three HIGHEST names moves it about -4.6%, and that
+    is the number that bounds the exit multiple's error bar.
+
+    Reported here rather than hidden: the maximum drop-one deviation is 4.63%,
+    and it is one-sided downward, so the derived exit multiple would FALL if any
+    of SSP, Wetherspoon or Whitbread were excluded.
     """
     full = multiples(PEERS)["ev_ebit"]["median"]
-    without = multiples([p for p in PEERS if p.name != "Mitchells & Butlers"])
-    assert without["ev_ebit"]["median"] / full - 1.0 == pytest.approx(
-        0.0013, abs=1e-4
-    )
+    deviations = {}
+    for peer in PEERS:
+        rest = [p for p in PEERS if p.name != peer.name]
+        deviations[peer.name] = multiples(rest)["ev_ebit"]["median"] / full - 1.0
+    worst = max(abs(d) for d in deviations.values())
+    assert worst == pytest.approx(0.0463, abs=5e-4)
+    assert worst < 0.05
+    # The two "safe" drops are the extreme observations, which is exactly why
+    # quoting either of them alone would misrepresent the stability.
+    assert deviations["Mitchells & Butlers"] == pytest.approx(0.0013, abs=1e-4)
+    assert deviations["Domino's Pizza Group"] == pytest.approx(0.0013, abs=1e-4)
+    # Every consequential drop moves the median DOWN.
+    for name in ("SSP Group", "J D Wetherspoon", "Whitbread"):
+        assert deviations[name] < -0.04, name
 
 
 # ---------------------------------------------------------------------------
@@ -473,16 +510,99 @@ def test_greggs_trades_inside_the_peer_range_on_both_multiples():
     assert m["ev_ebit"]["min"] < g.ev_ebit < m["ev_ebit"]["max"]
 
 
-def test_greggs_ev_ebit_sits_far_closer_to_the_peer_median_than_ev_ebitda():
-    """Greggs is 9% below the peer median on EV/EBITDA and 2% below it on
-    EV/EBIT. The EBITDA discount is a capital-intensity artefact, not a rating
-    discount, and that is what makes EV/EBIT the honest cross-check on the
-    terminal value."""
+def test_greggs_ev_ebit_sits_closer_to_the_peer_median_than_ev_ebitda():
+    """Re-based on the peers-consistent EBIT, which is a weaker claim.
+
+    **This test previously compared Greggs' AS-REPORTED EV/EBIT (13.10x, 2.4%
+    below the median) and asserted the EBITDA gap was more than 3x the EBIT
+    gap.** That comparison was not like-for-like: Greggs' EBIT is struck after
+    £6.9m of impairment because `inputs/greggs.py` folds impairment into the
+    depreciation fields, while every peer's underlying EBIT is struck before its
+    impairments. On the peers' own basis Greggs is 12.63x, 6.0% below the median,
+    and the ratio is 1.52x rather than 3.73x.
+
+    The direction of the finding holds — the EBITDA discount is still the larger
+    of the two, so capital intensity still explains part of it — but it explains
+    much less than the as-reported figures suggested. See the impairment
+    asymmetry section of the module docstring.
+    """
     m = multiples(PEERS)
     g = greggs_trading_multiples(GREGGS_HISTORICALS)
     ebitda_gap = abs(g.ev_ebitda / m["ev_ebitda"]["median"] - 1.0)
-    ebit_gap = abs(g.ev_ebit / m["ev_ebit"]["median"] - 1.0)
-    assert ebitda_gap > 3.0 * ebit_gap
+    reported_gap = abs(g.ev_ebit / m["ev_ebit"]["median"] - 1.0)
+    consistent_gap = abs(g.ev_ebit_pre_impairment / m["ev_ebit"]["median"] - 1.0)
+    assert ebitda_gap == pytest.approx(0.0909, abs=1e-4)
+    assert reported_gap == pytest.approx(0.0244, abs=1e-4)
+    assert consistent_gap == pytest.approx(0.0597, abs=1e-4)
+    # The honest comparison, and it is 1.52x not 3.73x.
+    assert ebitda_gap / consistent_gap == pytest.approx(1.523, abs=1e-3)
+    assert ebitda_gap > consistent_gap
+    # And the as-reported basis flatters the claim by more than 2x.
+    assert ebitda_gap / reported_gap > 2.0 * (ebitda_gap / consistent_gap)
+
+
+def test_the_impairment_asymmetry_is_exposed_and_signed():
+    """The bias has to be computable, not just described.
+
+    Greggs' EBIT carries £6.9m of FY2025 impairment that the peers' underlying
+    EBIT does not. Adding it back RAISES Greggs' EBIT and so LOWERS its EV/EBIT
+    — i.e. Greggs looks cheaper on a like-for-like basis, and the derived exit
+    multiple is understated. Both directions are asserted so neither can be
+    quietly reversed.
+    """
+    g = greggs_trading_multiples(GREGGS_HISTORICALS)
+    assert g.impairment == pytest.approx(6.9)
+    assert g.ebit == pytest.approx(183.7)
+    assert g.ebit_pre_impairment == pytest.approx(190.6)
+    assert g.ebit_pre_impairment > g.ebit
+    assert g.ev_ebit_pre_impairment < g.ev_ebit
+    assert g.ev_ebit_pre_impairment == pytest.approx(12.6259, abs=1e-4)
+
+
+def test_the_exit_multiple_tv_is_identically_peer_ev_ebit_times_terminal_ebit():
+    """What the football field's "exit multiple" bar actually contains.
+
+    EV/EBITDA == EV/EBIT x (1 - D&A/EBITDA) is an identity, and the derived
+    driver IS peer median EV/EBIT x (1 - terminal D&A/EBITDA). So the EBITDA
+    cancels and the exit-multiple terminal value is exactly the peer median
+    EV/EBIT applied to terminal EBIT. It is no longer an EBITDA method, and it
+    carries no information beyond one peer's EV/EBIT.
+
+    With two-decimal literals the identity holds to the rounding, ~0.07%.
+    """
+    from bluebook.inputs.greggs import GREGGS_SHARE_COUNT
+    from bluebook.valuation import value_model
+
+    median_ev_ebit = multiples(PEERS)["ev_ebit"]["median"]
+    for name in SCENARIOS:
+        drivers = SCENARIOS[name]
+        model = build_model(GREGGS_HISTORICALS, drivers)
+        valuation = value_model(
+            model, drivers, GREGGS_HISTORICALS, GREGGS_SHARE_COUNT.value
+        )
+        tv = valuation.terminal_value_exit_multiple
+        identity = median_ev_ebit * valuation.terminal.ebit
+        assert tv == pytest.approx(identity, rel=1e-3), name
+
+
+def test_bears_derived_multiple_sits_below_every_peer_ev_ebitda():
+    """Bear extrapolates beyond the observed range in BOTH directions.
+
+    Its input intensity (62.26%) is above every peer's, which is why
+    `intensity_matched_multiple()` refuses it. Its OUTPUT multiple of 5.07x is
+    below every peer's EV/EBITDA, the lowest being SSP at 5.27x. Stating only
+    the first half would understate how far outside the data Bear sits.
+    """
+    m = multiples(PEERS)
+    bear = SCENARIOS["Bear"].exit_ev_ebitda
+    assert bear == pytest.approx(5.07, abs=5e-3)
+    assert bear < m["ev_ebitda"]["min"]
+    assert m["ev_ebitda"]["min"] == pytest.approx(5.2717, abs=1e-4)
+    # Base and Bull, by contrast, land inside the peer EV/EBITDA range.
+    for name in ("Base", "Bull"):
+        assert (
+            m["ev_ebitda"]["min"] < SCENARIOS[name].exit_ev_ebitda < m["ev_ebitda"]["max"]
+        ), name
 
 
 def test_greggs_ev_is_market_cap_plus_the_models_own_opening_net_debt():
@@ -514,7 +634,7 @@ def test_the_52_week_range_and_price_are_pinned_to_the_provider_snapshot():
     assert GREGGS_52_WEEK_LOW.value == pytest.approx(1407.20)
     assert GREGGS_52_WEEK_HIGH.value == pytest.approx(2046.00)
     assert GREGGS_SHARE_PRICE.value == pytest.approx(1964.00)
-    assert PRICE_OBSERVATION_DATE == "5 August 2026"
+    assert PRICE_OBSERVATION_DATE == "5 August 2026, 11:45-11:59 GMT"
 
 
 def test_the_52_week_range_records_its_provider_and_date():
