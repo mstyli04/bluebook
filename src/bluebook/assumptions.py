@@ -346,21 +346,62 @@ BASE = Drivers(
     # UK equity risk premium, mid-point of standard estimate ranges (e.g.
     # Damodaran-style UK ERP estimates cluster around 5%-6%).
     equity_risk_premium=0.055,
-    # Estimated levered equity beta for a UK defensive high-street
-    # bakery/QSR retailer; judgement estimate in the 0.6-0.9 range typically
-    # reported for a Greggs-like name, not pulled from a data provider.
-    beta=0.75,
+    # Estimated levered equity beta. Judgement estimate, not pulled from a
+    # data provider.
+    #
+    # Raised from 0.75 to 0.90 by owner ruling (Task 9 review). 0.75 read
+    # Greggs as a defensive consumer staple. It is not one: it sells
+    # discretionary food-to-go on the high street, so its volumes track
+    # footfall and real disposable income; it runs high operating leverage,
+    # with a largely fixed shop and supply-chain cost base against a variable
+    # transaction count; and its estate is fully leased, which gears earnings
+    # further because rent does not flex with sales. Those three together are
+    # a cyclical mid-cap discretionary retailer's risk profile, not a staple's.
+    # At 0.90 the cost of equity is 4.00% + 0.90 x 5.50% = 8.95%, which is
+    # where a practitioner would expect a UK mid-cap discretionary retailer to
+    # sit; 0.75 put it at 8.125%, below the ~9% floor such names are usually
+    # marked at.
+    beta=0.90,
     # Estimated pre-tax cost of debt ~ risk_free_rate + ~150bp credit spread
     # for an investment-grade-quality UK retail borrower.
     cost_of_debt=0.055,
-    # Greggs is very lightly geared - FY2025 borrowings were only £25m drawn
-    # on its £100m RCF against £625.2m of book equity - so a low target
-    # weight is used. This is financial debt only: FY2025 lease_liabilities
-    # of £449.8m are deliberately excluded from the WACC debt base here (they
-    # are financed at the lease discount rate embedded in finance_costs, not
-    # at cost_of_debt), so target_debt_weight understates total balance-sheet
-    # leverage including leases.
-    target_debt_weight=0.10,
+    # Debt weight in the WACC, INCLUDING lease liabilities in the debt base.
+    #
+    # Raised from 0.10 to 0.213 by controller ruling (Task 9 review). 0.10 was
+    # financial debt only - FY2025 borrowings of £25.0m drawn on the £100m RCF
+    # - while the valuation's equity bridge deducts the £449.8m lease
+    # liability as debt. That is two definitions of debt inside one model,
+    # which is indefensible whichever definition is right, and it is the same
+    # class of inconsistency already corrected between the capex and ROU
+    # anchors above. Leases are debt here, so they are debt in both places.
+    #
+    # Derived, not picked. The weight is net debt including leases over
+    # enterprise value, solved as a fixed point against the model's own Base
+    # enterprise value (the weight sets the WACC, the WACC sets the EV, the EV
+    # sets the weight):
+    #     net debt + leases = (25.0 - 70.8) + 449.8 = 404.0
+    #     404.0 / 1,895.0 = 21.32%   ->   0.213
+    # The fixed point converges in 17 passes from a 10% start; at the rounded
+    # 0.213 the implied weight is 21.319%, i.e. stationary to within 2bp.
+    # Market values would be the textbook basis, but no share price is
+    # transcribed in inputs/, so the model's own EV is the only enterprise
+    # value available; a book-equity basis would give 39.3%, which overstates
+    # leverage because book equity understates Greggs' equity value.
+    #
+    # This is NOT a free lunch: it lowers the WACC from 8.47% to 7.92% (at
+    # beta 0.90) and raises Base by ~184p, but that uplift is the lease
+    # interest tax shield - ~£4.5m a year, 449.8 x 4.02% x 25% - which the
+    # model previously captured nowhere. Unlevered FCF taxes EBIT, so it does
+    # not see it, and a lease-free WACC debt base did not see it either.
+    #
+    # Caveat, flagged not fixed: cost_of_debt (5.5%) is the RCF rate, and it
+    # is now applied to a debt base whose gross composition is £449.8m of
+    # leases against £25.0m of drawn RCF - and the leases are carried at the
+    # 4.02% LEASE_DISCOUNT_RATE, not at 5.5%. A gross-weighted blended rate is
+    # (25.0 x 5.5% + 449.8 x 4.02%) / 474.8 = 4.10%, which would cut the WACC
+    # a further ~22bp. Left alone because the ruling was on the weight, not
+    # the rate, and cost_of_debt also drives the revolver in schedules/debt.py.
+    target_debt_weight=0.213,
 
     # Long-run UK inflation/nominal-GDP proxy, consistent with the BoE's 2%
     # inflation target; stays below risk_free_rate + 2% as required.

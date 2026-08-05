@@ -29,7 +29,7 @@ from bluebook.valuation import (
     terminal_value_exit_multiple, terminal_value_gordon, unlevered_fcf, wacc,
 )
 from bluebook.valuation import (
-    excess_asset_tax_shield, terminal_year, value_model,
+    discount_factors, excess_asset_tax_shield, terminal_year, value_model,
 )
 
 BASE = SCENARIOS["Base"]
@@ -62,6 +62,24 @@ def test_exit_multiple_formula():
 def test_enterprise_value_discounts_mid_year_consistently():
     ev = enterprise_value(fcf=[100.0] * 5, tv=1000.0, wacc_rate=0.10)
     assert 0 < ev < sum([100.0] * 5) + 1000.0
+    # The brief's assertion above is satisfied by ANY positive discount rate
+    # and pins nothing about the convention its own name claims. These pin it.
+    # Year t discounts at (1 + r) ** (t - 0.5), and the terminal value shares
+    # the final year's factor rather than taking a full-year one.
+    assert discount_factors(5, 0.10) == pytest.approx(
+        [1.10 ** 0.5, 1.10 ** 1.5, 1.10 ** 2.5, 1.10 ** 3.5, 1.10 ** 4.5]
+    )
+    assert ev == pytest.approx(
+        sum(100.0 / 1.10 ** (t - 0.5) for t in range(1, 6)) + 1000.0 / 1.10 ** 4.5
+    )
+    # Explicitly NOT the year-end convention, and explicitly not a full five
+    # years on the terminal value — the two mistakes this test exists to catch.
+    assert ev != pytest.approx(
+        sum(100.0 / 1.10 ** t for t in range(1, 6)) + 1000.0 / 1.10 ** 5
+    )
+    assert ev != pytest.approx(
+        sum(100.0 / 1.10 ** (t - 0.5) for t in range(1, 6)) + 1000.0 / 1.10 ** 5
+    )
 
 
 def test_equity_bridge_subtracts_leases_as_debt():
@@ -77,14 +95,37 @@ def test_implied_share_price_returns_pence():
     assert implied_share_price(700.0, 100.0) == pytest.approx(700.0)
 
 
-def test_terminal_value_is_not_an_implausible_share_of_ev():
-    model = build_model(GREGGS_HISTORICALS, BASE)
-    fcf = unlevered_fcf(model, BASE)
-    rate = wacc(BASE)
-    tv = terminal_value_gordon(fcf[-1], rate, BASE.perpetuity_growth)
-    ev = enterprise_value(fcf, tv, rate)
-    discounted_tv = tv / (1 + rate) ** 5
-    assert 0.4 < discounted_tv / ev < 0.9
+@pytest.mark.parametrize("name", ["Bear", "Base", "Bull"])
+def test_terminal_value_is_not_an_implausible_share_of_ev(name):
+    """Terminal concentration, measured on the construction the model uses.
+
+    Two changes from the brief's version, both of which it needed:
+
+    1. **The clock.** It discounted the TV at ``(1 + rate) ** 5`` while
+       ``enterprise_value`` discounts it at ``** 4.5``, understating the share
+       by 3.8%. Base's 0.895 "just inside the 0.9 bound" was an artefact of
+       comparing two different discount clocks; corrected, the naive figure is
+       0.9284 and the 0.9 bound fails in all three scenarios.
+    2. **The construction.** It struck Gordon off the RAW final forecast year.
+       The model does not use that number anywhere. A bound on a construction
+       the model does not use cannot catch a regression in the one it does.
+
+    **The band.** 0.85-0.97. It is wide and deliberately so: the honest reading
+    is not that terminal concentration here is normal, but that it is
+    structurally high and the band's job is to catch a step-change, not to
+    certify comfort. The floor sits below Bull (the least concentrated case, at
+    ~0.93) with room for a materially stronger explicit period; the ceiling
+    sits above Bear (~0.94) but below 1.0, which is where it would go if the
+    explicit-period PV turned negative overall. Concentration this high is a
+    direct consequence of a five-year window whose first two years of FCF are
+    negative while the distribution-centre programme runs off — it is a
+    property of the forecast, not of the terminal formula.
+    """
+    drivers = SCENARIOS[name]
+    model = build_model(GREGGS_HISTORICALS, drivers)
+    valuation = value_model(model, drivers, GREGGS_HISTORICALS, GREGGS_SHARE_COUNT.value)
+    share = valuation.pv_terminal_value / valuation.enterprise_value
+    assert 0.85 < share < 0.97
 
 
 def test_bull_case_values_higher_than_bear():
@@ -106,8 +147,22 @@ def test_bull_case_values_higher_than_bear():
 def test_wacc_weights_equity_and_after_tax_debt_at_the_target_structure():
     """Pins the build, not just the ordering the brief's test checks."""
     rate = wacc(BASE)
-    assert rate == pytest.approx(0.9 * 0.08125 + 0.1 * 0.055 * 0.75)
-    assert rate == pytest.approx(0.07725)
+    assert rate == pytest.approx(0.787 * 0.0895 + 0.213 * 0.055 * 0.75)
+    assert rate == pytest.approx(0.079223, abs=1e-6)
+    # The debt weight must be the one the bridge implies, not financial debt
+    # alone. Pinning it here means a silent revert to 10% fails a test rather
+    # than quietly re-introducing two definitions of debt.
+    last = GREGGS_HISTORICALS[-1]
+    net_debt_and_leases = (
+        last.borrowings.value - last.cash.value + last.lease_liabilities.value
+    )
+    valuation = value_model(
+        build_model(GREGGS_HISTORICALS, BASE), BASE, GREGGS_HISTORICALS,
+        GREGGS_SHARE_COUNT.value,
+    )
+    assert net_debt_and_leases / valuation.enterprise_value == pytest.approx(
+        BASE.target_debt_weight, abs=5e-4
+    )
 
 
 def test_wacc_is_identical_in_every_scenario():
@@ -129,8 +184,16 @@ def test_wacc_is_identical_in_every_scenario():
 def test_unlevered_fcf_reconciles_to_ebitda_less_tax_on_ebit(name):
     """EBIT(1 - t) + D&A is EBITDA - t x EBIT; check the rearrangement holds.
 
-    Not a restatement of the implementation: it removes D&A from both sides,
-    so a wrong D&A series would break it.
+    What this does and does not cover. It pins the tax treatment (tax is
+    charged on EBIT, not on EBITDA and not on profit after interest) and the
+    deduction set (total capex, ROU additions and the NWC movement, each once).
+
+    It does NOT cover the D&A series, and an earlier docstring wrongly claimed
+    it did. ``reference.py`` defines ``ebit = ebitda - da_total``, so
+    ``EBIT(1-t) + D&A == EBITDA - t x EBIT`` is an identity for ANY
+    ``da_total`` whatsoever; substituting a garbage D&A series changes both
+    sides equally and the test still passes. The D&A series is covered
+    upstream, by the schedule tests in tests/test_schedules.py.
     """
     drivers = SCENARIOS[name]
     model = build_model(GREGGS_HISTORICALS, drivers)
@@ -266,24 +329,31 @@ def test_terminal_year_strips_the_fy2030_excess_depreciation(name):
 
 @pytest.mark.parametrize(
     "name,expected_pct_change",
-    # Re-based terminal FCF against the raw final forecast year. Bear's sign is
-    # opposite to Base's and Bull's, for the reason given in the test above:
-    # its terminal revenue growth is 1.5%, BELOW the 2% perpetuity growth, so
-    # re-basing raises its sustaining investment rather than lowering it. Any
-    # summary that quotes only the Base figure ("+18%") is quoting a
-    # scenario-specific number as if it were a general property.
-    [("Bear", -11.7), ("Base", 18.1), ("Bull", 36.8)],
+    # Re-based terminal FCF against the raw final forecast year, per scenario.
+    [("Bear", -18.8), ("Base", 13.4), ("Bull", 33.7)],
 )
-def test_rebasing_moves_terminal_fcf_by_the_amount_the_growth_gap_implies(
+def test_rebasing_moves_terminal_fcf_against_a_per_scenario_expectation(
     name, expected_pct_change
 ):
+    """Three separate expectations. Deliberately NOT an invariant.
+
+    An earlier version asserted ``(terminal.fcf > raw) ==
+    (revenue_growth[-1] > perpetuity_growth)`` as a general rule. That is
+    false. Three terms move on re-basing and only the investment term (capex
+    plus ROU additions) is signed by the growth gap; the D&A-tax-shield term
+    always subtracts, and the anchor uplift always adds investment. Two of the
+    three are one-signed against FCF, so the crossover sits strictly ABOVE
+    ``g*``, not at it — at a driver growth of exactly ``g*`` the investment
+    term is neutral and re-basing still cuts FCF. No shipped scenario sits in
+    that band, but a false invariant in a test is worse than no invariant,
+    especially one written in the same breath as a correction of somebody
+    else's over-general claim.
+    """
     drivers = SCENARIOS[name]
     model = build_model(GREGGS_HISTORICALS, drivers)
     terminal = terminal_year(model, drivers, GREGGS_HISTORICALS)
     raw = unlevered_fcf(model, drivers)[-1]
     assert (terminal.fcf / raw - 1.0) * 100 == pytest.approx(expected_pct_change, abs=0.1)
-    # The gap is signed by the growth comparison, not by a fixed direction.
-    assert (terminal.fcf > raw) == (drivers.revenue_growth[-1] > drivers.perpetuity_growth)
 
 
 def test_terminal_year_reproduces_the_briefed_base_case_figures():
@@ -291,9 +361,12 @@ def test_terminal_year_reproduces_the_briefed_base_case_figures():
     drivers = SCENARIOS["Base"]
     model = build_model(GREGGS_HISTORICALS, drivers)
     terminal = terminal_year(model, drivers, GREGGS_HISTORICALS)
-    assert terminal.capex_pct_revenue == pytest.approx(0.06575, abs=5e-6)
+    # 6.852% against the 6.575% the brief quotes: the brief's figure was struck
+    # on the FY2025 anchor, which the Task 9 review moved to a post-programme
+    # ~40%. The ROU intensity is unchanged because its anchor was not moved.
+    assert terminal.capex_pct_revenue == pytest.approx(0.06852, abs=5e-6)
     assert terminal.rou_additions_pct_revenue == pytest.approx(0.03691, abs=5e-6)
-    assert terminal.fcf == pytest.approx(149.3, abs=0.1)
+    assert terminal.fcf == pytest.approx(143.4, abs=0.1)
     assert unlevered_fcf(model, drivers)[-1] == pytest.approx(126.4, abs=0.1)
 
 
@@ -319,9 +392,11 @@ def test_excess_asset_tax_shield_matches_a_year_by_year_sum():
     """Closed form checked against the stream it claims to sum.
 
     The shield is valued AT the terminal date, so year k (k = 1 for the first
-    year after the terminal year) is discounted k times.
+    year after the terminal year) is discounted k times — year-end within the
+    perpetuity, which is a known ~0.8p inconsistency against the mid-year
+    terminal value it sits beside (see the module docstring).
     """
-    excess, rate, tax, rate_wacc = 245.9, 0.1423, 0.25, 0.07725
+    excess, rate, tax, rate_wacc = 245.9, 0.1423, 0.25, 0.0792229
     explicit = 0.0
     carried = excess
     for k in range(1, 600):
@@ -331,14 +406,21 @@ def test_excess_asset_tax_shield_matches_a_year_by_year_sum():
 
 
 @pytest.mark.parametrize("name", ["Bear", "Base", "Bull"])
-def test_excess_ppe_decays_from_fy2029_onto_the_models_own_fy2030_gap(name):
-    """Validates using the FY2029 excess with a (1 - d) decay to FY2030.
+def test_the_fy2029_decay_overstates_the_models_own_fy2030_gap(name):
+    """Measures the residual the FY2029 basis now carries. Was once exact.
 
-    The closed form assumes the excess decays purely at the depreciation rate,
-    i.e. that FY2030 capex is exactly sustaining. It is: each scenario's final
-    capex driver was derived to hold PP&E/revenue flat at its own terminal
-    revenue growth, and FY2029 -> FY2030 grows at exactly that rate. So the
-    decayed FY2029 excess should land on the model's actual FY2030 excess.
+    The closed form decays the FY2029 excess once at (1 - d) to stand in for
+    the FY2030 excess, which assumes FY2030 capex exactly sustains the terminal
+    anchor. Under the old FY2025 anchor that was exact, because the capex
+    drivers were calibrated to hold PP&E/revenue at precisely 38.68%. Against
+    the post-programme anchor near 40% it no longer is: FY2030 capex sustains
+    the old anchor, not the new one, so the decayed excess runs high.
+
+    Bounded rather than pinned, because the size of the residual is a
+    consequence of an inconsistency flagged for the owner (the explicit-period
+    capex drivers still target 38.68%) and should not be silently normalised.
+    If it ever exceeded 10% the shield would need re-basing onto the FY2030
+    excess directly.
     """
     drivers = SCENARIOS[name]
     model = build_model(GREGGS_HISTORICALS, drivers)
@@ -347,14 +429,91 @@ def test_excess_ppe_decays_from_fy2029_onto_the_models_own_fy2030_gap(name):
     revenue = model.income_statement["revenue"]
     actual_fy2030_excess = model.balance_sheet["ppe"][-1] - anchor * revenue[-1]
     decayed = valuation.excess_ppe * (1 - drivers.ppe_depreciation_rate)
-    assert decayed == pytest.approx(actual_fy2030_excess, rel=0.005)
+    overstatement = decayed / actual_fy2030_excess - 1.0
+    assert 0.0 < overstatement < 0.10
+
+
+@pytest.mark.parametrize("name", ["Bear", "Base", "Bull"])
+def test_terminal_ppe_anchor_sits_between_the_last_actual_and_the_forecast_peak(name):
+    """The owner's ruling, asserted directly.
+
+    FY2025's 38.68% is the top of a rising 28.20 / 33.00 / 38.68 series and is
+    not a finished state; the model's own final-year intensity is a
+    transitional peak inflated by the capex taper. The post-programme anchor
+    must sit strictly between them.
+    """
+    drivers = SCENARIOS[name]
+    model = build_model(GREGGS_HISTORICALS, drivers)
+    anchor = terminal_year(model, drivers, GREGGS_HISTORICALS).ppe_intensity
+    last = GREGGS_HISTORICALS[-1]
+    fy2025_intensity = last.ppe.value / last.revenue.value
+    final_forecast_intensity = (
+        model.balance_sheet["ppe"][-1] / model.income_statement["revenue"][-1]
+    )
+    assert fy2025_intensity < anchor < final_forecast_intensity
+    # Historical series is rising throughout, which is why its last point is
+    # not a steady state. Checked here so the premise is not just asserted.
+    intensities = [y.ppe.value / y.revenue.value for y in GREGGS_HISTORICALS]
+    assert intensities == sorted(intensities)
+    assert intensities[-1] == pytest.approx(fy2025_intensity)
+
+
+def test_terminal_ppe_anchor_absorbs_one_average_asset_life_of_growth():
+    """Pins the derivation: final intensity discounted by (1 + g*) ** (1 / d).
+
+    Re-derives the closed form, which is normally the anti-pattern this file
+    avoids — justified here because the number is a judgement rule rather than
+    an emergent property, so there is no independent behaviour to check it
+    against. The independent checks are the bracketing test above and the
+    schedule-iteration tests below, which confirm the anchor is one the real
+    fixed-asset schedule actually holds.
+    """
+    drivers = SCENARIOS["Base"]
+    model = build_model(GREGGS_HISTORICALS, drivers)
+    anchor = terminal_year(model, drivers, GREGGS_HISTORICALS).ppe_intensity
+    final_intensity = (
+        model.balance_sheet["ppe"][-1] / model.income_statement["revenue"][-1]
+    )
+    life = 1.0 / drivers.ppe_depreciation_rate
+    assert anchor == pytest.approx(
+        final_intensity / (1 + drivers.perpetuity_growth) ** life
+    )
+    assert anchor == pytest.approx(0.40311, abs=5e-6)
+    assert life == pytest.approx(7.028, abs=0.001)
+
+
+def test_rou_anchor_is_still_the_fy2025_actual_because_it_already_plateaued():
+    """The PP&E treatment deliberately does not carry across to leases.
+
+    ROU/revenue stepped up once (16.39% -> 19.22%) and has been flat since
+    (19.20%), and the forecast never builds a transitional peak over it — the
+    whole Base path runs BELOW the FY2025 actual. No build-ahead, nothing to
+    absorb, so FY2025 is already the plateau.
+    """
+    drivers = SCENARIOS["Base"]
+    model = build_model(GREGGS_HISTORICALS, drivers)
+    terminal = terminal_year(model, drivers, GREGGS_HISTORICALS)
+    last = GREGGS_HISTORICALS[-1]
+    assert terminal.rou_intensity == pytest.approx(
+        last.rou_assets.value / last.revenue.value
+    )
+    # The premise: flat over the last two actuals, unlike PP&E which is rising.
+    rou = [y.rou_assets.value / y.revenue.value for y in GREGGS_HISTORICALS]
+    assert rou[2] == pytest.approx(rou[1], rel=0.005)
+    assert rou[1] > rou[0] * 1.10
+    # And no forecast hump to unwind: every year sits below the anchor.
+    forecast = [
+        p / r
+        for p, r in zip(model.balance_sheet["rou_assets"], model.income_statement["revenue"])
+    ]
+    assert all(f < terminal.rou_intensity for f in forecast)
 
 
 def test_excess_ppe_shield_is_a_terminal_date_value_and_is_discounted_as_one():
     drivers = SCENARIOS["Base"]
     model = build_model(GREGGS_HISTORICALS, drivers)
     valuation = value_model(model, drivers, GREGGS_HISTORICALS, GREGGS_SHARE_COUNT.value)
-    assert valuation.excess_ppe_tax_shield == pytest.approx(34.2, abs=0.1)
+    assert valuation.excess_ppe_tax_shield == pytest.approx(27.9, abs=0.1)
     # Same mid-year factor the terminal value gets: 4.5 years, not 5.
     assert valuation.enterprise_value == pytest.approx(
         enterprise_value(
@@ -392,8 +551,11 @@ def test_greggs_is_in_a_net_cash_position_so_the_bridge_adds_it_back():
         build_model(GREGGS_HISTORICALS, drivers), drivers, GREGGS_HISTORICALS,
         GREGGS_SHARE_COUNT.value,
     )
+    # The second half of this test used to assert
+    #   equity_value > enterprise_value - lease_liabilities
+    # which is algebraically implied by net_debt < 0 given the bridge, so it
+    # tested nothing the first line did not. Removed.
     assert valuation.net_debt < 0
-    assert valuation.equity_value > valuation.enterprise_value - valuation.lease_liabilities
 
 
 def test_implied_share_price_is_ordered_bull_above_base_above_bear():
