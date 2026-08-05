@@ -197,6 +197,67 @@ HIST_ROU_DEPRECIATION_RATE = tuple(
     for a, b in zip(GREGGS_HISTORICALS[:-1], GREGGS_HISTORICALS[1:])
 )
 
+# ---------------------------------------------------------------------------
+# Cost of debt: a blend, because the WACC debt base is a blend.
+# ---------------------------------------------------------------------------
+# The WACC debt weight includes lease liabilities (see target_debt_weight
+# below), so the rate applied to it has to be the rate that base is actually
+# financed at. Greggs' debt is £449.8m of leases carried at the lease discount
+# rate against £25.0m drawn on the RCF at the RCF rate; charging the whole base
+# at the RCF rate would overstate the cost of the 95% of it that is leases.
+# schedules/leases.py made exactly this error once in the other direction, and
+# its module docstring records it.
+
+# Estimated pre-tax rate on the revolving credit facility ~ risk_free_rate +
+# ~150bp credit spread for an investment-grade-quality UK retail borrower.
+# A judgement estimate, not a filed figure. Also the rate the revolver
+# actually draws at - see interest_rate_debt below, which is a different
+# quantity from the blended cost of capital and is deliberately left at this
+# rate rather than blended.
+RCF_COST_OF_DEBT = 0.055
+
+# SCHEMA GAP - this is a bare transcribed literal, not a derived figure, and
+# it is the only one in this module. Every other number here comes out of
+# GREGGS_HISTORICALS precisely so that a page citation cannot go stale against
+# the data; this one cannot, because `inputs/schema.py` has no lease_interest
+# field. `finance_costs` is a single line that bundles lease interest with RCF
+# interest and a 0.7 exceptional (18.1 total in FY2025), so 16.7 cannot be
+# divided out programmatically. Closing the gap properly needs a
+# `lease_interest` field on HistoricalYear, which is an inputs/ change and out
+# of scope here; flagged in the task report. Until then this literal and the
+# identical one in schedules/leases.py must be re-checked against the filing
+# by hand, and test_assumptions_lease_rate_matches_the_lease_schedule at least
+# guarantees they cannot disagree with each other.
+GREGGS_FY2025_LEASE_INTEREST = 16.7  # FY2025 AR p.128 (of 18.1 total finance costs)
+
+# The rate itself is derived, against FY2024's closing lease liability read
+# straight from GREGGS_HISTORICALS rather than re-transcribed:
+#     16.7 / 415.1 = 4.0231%
+#
+# This duplicates the derivation in schedules/leases.py, which is not ideal
+# and is deliberate. That module cannot be imported from here: it does
+# `from bluebook.assumptions import Drivers`, so importing it back would make
+# the pair import-order-dependent - fine if assumptions is imported first,
+# an ImportError if leases is. Duplication with a test guard is the lesser
+# evil, and test_assumptions_lease_rate_matches_the_lease_schedule asserts
+# the two derivations agree exactly, so neither can drift.
+LEASE_DISCOUNT_RATE = (
+    GREGGS_FY2025_LEASE_INTEREST / GREGGS_HISTORICALS[-2].lease_liabilities.value
+)
+
+# Gross-debt-weighted blend of the two rates, on the FY2025 actual balances:
+#     (25.0 x 5.5000% + 449.8 x 4.0231%) / 474.8 = 4.1009%
+# Gross, not net: netting cash against the RCF would give a negative weight on
+# the RCF leg, which is meaningless for a cost of borrowing. The netting
+# belongs in the weight (and in the bridge), not in the rate.
+BLENDED_COST_OF_DEBT = (
+    GREGGS_HISTORICALS[-1].borrowings.value * RCF_COST_OF_DEBT
+    + GREGGS_HISTORICALS[-1].lease_liabilities.value * LEASE_DISCOUNT_RATE
+) / (
+    GREGGS_HISTORICALS[-1].borrowings.value
+    + GREGGS_HISTORICALS[-1].lease_liabilities.value
+)
+
 
 BASE = Drivers(
     # Decelerating from HIST_REVENUE_GROWTH[-1] (FY2024->FY2025 actual,
@@ -221,7 +282,7 @@ BASE = Drivers(
     opex_pct_revenue=(0.4513, 0.4480, 0.4460, 0.4445, 0.4430),
 
     # Year 1 anchored exactly to HIST_CAPEX_PCT_REVENUE[-1] (FY2025 actual,
-    # 13.27%, also HIST_CAPEX_HIGH), tapering to 7.41% by FY2030. The taper
+    # 13.27%, also HIST_CAPEX_HIGH), tapering to 7.77% by FY2030. The taper
     # IS the story: the Derby/Kettering/Balliol Park distribution-centre
     # programme that drove HIST_CAPEX_PCT_REVENUE up across FY2023-25 (from
     # HIST_CAPEX_LOW, 10.95%, to HIST_CAPEX_HIGH, 13.27%) is completing, so
@@ -234,9 +295,23 @@ BASE = Drivers(
     # picked. In steady state with revenue growth g and depreciation rate d,
     # capex reaching an asset base at a ratio c_ppe holds PP&E/revenue at
     #     p = c_ppe * (1 + g) / (g + d)
-    # Inverting at the FY2025 actual PP&E/revenue (832.1 / 2151.2 = 38.68%),
-    # g = 4.5% terminal growth and d = ppe_depreciation_rate (14.23%):
-    #     c_ppe = 0.386807 * (0.045 + 0.1423) / 1.045 = 6.9329%
+    #
+    # RECALIBRATED in fix round 2. It used to invert this at the FY2025
+    # actual PP&E/revenue of 38.68%, giving 7.41%. The Task 9 review moved
+    # the terminal anchor the perpetuity is struck on OFF that figure - see
+    # valuation.terminal_ppe_intensity(), which derives a post-programme
+    # intensity because FY2025 is the top of a rising 28.20 / 33.00 / 38.68
+    # series, not a finished state. That left the model converging on one
+    # steady state (38.68%) while valuing another (~40.6%), which is the same
+    # class of defect as two definitions of debt. The driver is now inverted
+    # at the anchor the perpetuity actually uses.
+    #
+    # It is a fixed point, because the anchor is read off the model's own
+    # FY2030 balance sheet and raising terminal capex raises that balance:
+    #     c5 -> FY2030 PP&E -> anchor -> required c5
+    # It converges in 20 passes (each pass moves c5 by ~15% of the previous
+    # move). At the anchor of 40.6045%, g = 4.5% and d = 14.23%:
+    #     c_ppe = 0.406045 * (0.045 + 0.1423) / 1.045 = 7.2779%
     #
     # But c_ppe is NOT the driver. capex_pct_revenue is a ratio of TOTAL
     # cash capex — PP&E plus intangible additions, the basis on which
@@ -244,7 +319,14 @@ BASE = Drivers(
     # HIST_PPE_CAPEX_SHARE (93.62%) of it into the fixed-asset schedule, the
     # rest going to intangibles. The sustaining requirement must therefore
     # be grossed up by 1 / HIST_PPE_CAPEX_SHARE:
-    #     c = 6.9329% / 0.936158 = 7.4057%  ->  0.0741
+    #     c = 7.2779% / 0.936158 = 7.7740%  ->  0.0777
+    #
+    # 7.77% rather than the 7.718% a single pass off the round-1 anchor
+    # gives: the extra 5.6bp is the fixed point closing. The confirmation
+    # that it has closed is in valuation.py — the excess-PP&E shield's
+    # (1 - d) decay from FY2029 lands back on the model's own FY2030 excess
+    # to within 0.06%, where before the recalibration it overstated it by
+    # 4.8%. That drift WAS the symptom of the inconsistency.
     #
     # Both figures are named constants derived from GREGGS_HISTORICALS, not
     # literals, so the driver and the split cannot drift apart — see
@@ -257,7 +339,7 @@ BASE = Drivers(
     # survived a round of review inside a test that re-derived the very
     # formula it was meant to be auditing.
     #
-    # An earlier round set this to 7.00%, which was the ungrossed c_ppe used
+    # A round before that set this to 7.00%, which was the ungrossed c_ppe used
     # as if it were a total-capex ratio. That silently starved the PP&E line
     # of the intangible share and drove Base's true steady-state
     # PP&E/revenue to 36.56%, ~2.1pp below the anchor the derivation claimed
@@ -280,7 +362,7 @@ BASE = Drivers(
     # three historical years sit inside the DC build programme, so the
     # historical range is an expansion-phase range. Bounding a terminal
     # steady-state assumption by it assumes the expansion never ends.
-    capex_pct_revenue=(0.1327, 0.1210, 0.1060, 0.0900, 0.0741),
+    capex_pct_revenue=(0.1327, 0.1210, 0.1060, 0.0900, 0.0777),
 
     # Year 1 anchored (rounded) to HIST_ROU_ADDITIONS_PCT_REVENUE[-1]
     # (FY2025 actual, 3.48%), gliding to a 4.06% terminal.
@@ -362,9 +444,19 @@ BASE = Drivers(
     # sit; 0.75 put it at 8.125%, below the ~9% floor such names are usually
     # marked at.
     beta=0.90,
-    # Estimated pre-tax cost of debt ~ risk_free_rate + ~150bp credit spread
-    # for an investment-grade-quality UK retail borrower.
-    cost_of_debt=0.055,
+    # Cost of debt for the WACC. Blended across the debt base the WACC weight
+    # now covers - leases at 4.0231% and the RCF at 5.5000%, gross-weighted on
+    # the FY2025 actuals to 4.1009%. See BLENDED_COST_OF_DEBT above.
+    #
+    # Raised as a concern in fix round 1 and ruled on in round 2: the weight
+    # had been changed to include leases without changing the rate applied to
+    # it, which left the WACC ~22bp high. Same shape of error as the two
+    # definitions of debt that the weight change itself corrected.
+    #
+    # Used only by the WACC build. schedules/leases.py charges lease interest
+    # at its own LEASE_DISCOUNT_RATE and schedules/debt.py charges the
+    # revolver at interest_rate_debt, so nothing downstream sees this figure.
+    cost_of_debt=BLENDED_COST_OF_DEBT,
     # Debt weight in the WACC, INCLUDING lease liabilities in the debt base.
     #
     # Raised from 0.10 to 0.213 by controller ruling (Task 9 review). 0.10 was
@@ -380,28 +472,28 @@ BASE = Drivers(
     # enterprise value (the weight sets the WACC, the WACC sets the EV, the EV
     # sets the weight):
     #     net debt + leases = (25.0 - 70.8) + 449.8 = 404.0
-    #     404.0 / 1,895.0 = 21.32%   ->   0.213
-    # The fixed point converges in 17 passes from a 10% start; at the rounded
-    # 0.213 the implied weight is 21.319%, i.e. stationary to within 2bp.
+    #     404.0 / 1,947.9 = 20.74%   ->   0.2075
+    # At the rounded 0.2075 the implied weight is 20.740%, i.e. stationary to
+    # within 1bp. Re-solved in round 2 (it was 0.213 against an EV of 1,895.0)
+    # because both of that round's changes move enterprise value: the blended
+    # cost of debt raises it, the recalibrated terminal capex lowers it. The
+    # weight is a ratio to EV, so leaving it stale would have made the stated
+    # derivation false even though the ruling behind it had not changed.
     # Market values would be the textbook basis, but no share price is
     # transcribed in inputs/, so the model's own EV is the only enterprise
     # value available; a book-equity basis would give 39.3%, which overstates
     # leverage because book equity understates Greggs' equity value.
     #
-    # This is NOT a free lunch: it lowers the WACC from 8.47% to 7.92% (at
-    # beta 0.90) and raises Base by ~184p, but that uplift is the lease
-    # interest tax shield - ~£4.5m a year, 449.8 x 4.02% x 25% - which the
-    # model previously captured nowhere. Unlevered FCF taxes EBIT, so it does
-    # not see it, and a lease-free WACC debt base did not see it either.
+    # This is NOT a free lunch: it lowers the WACC and raises the implied
+    # price, but that uplift is the lease interest tax shield - ~£4.5m a year,
+    # 449.8 x 4.0231% x 25% - which the model previously captured nowhere.
+    # Unlevered FCF taxes EBIT, so it does not see it, and a lease-free WACC
+    # debt base did not see it either.
     #
-    # Caveat, flagged not fixed: cost_of_debt (5.5%) is the RCF rate, and it
-    # is now applied to a debt base whose gross composition is £449.8m of
-    # leases against £25.0m of drawn RCF - and the leases are carried at the
-    # 4.02% LEASE_DISCOUNT_RATE, not at 5.5%. A gross-weighted blended rate is
-    # (25.0 x 5.5% + 449.8 x 4.02%) / 474.8 = 4.10%, which would cut the WACC
-    # a further ~22bp. Left alone because the ruling was on the weight, not
-    # the rate, and cost_of_debt also drives the revolver in schedules/debt.py.
-    target_debt_weight=0.213,
+    # The rate applied to this base was corrected in round 2: see
+    # cost_of_debt above, which is now the blended 4.1009% rather than the
+    # RCF's 5.5%.
+    target_debt_weight=0.2075,
 
     # Long-run UK inflation/nominal-GDP proxy, consistent with the BoE's 2%
     # inflation target; stays below risk_free_rate + 2% as required.
@@ -410,8 +502,11 @@ BASE = Drivers(
     # not an independently sourced live market comp.
     exit_ev_ebitda=10.0,
 
-    # Same basis as cost_of_debt - approximate rate on the drawn RCF.
-    interest_rate_debt=0.055,
+    # Rate the revolver actually draws at. Deliberately NOT the blended
+    # cost_of_debt above: the RCF genuinely borrows at the RCF rate, and the
+    # blend is a cost-of-capital construct for weighting a mixed debt base,
+    # not a rate any instrument pays.
+    interest_rate_debt=RCF_COST_OF_DEBT,
     # FY2023-25 actual cash balances fell from £195.3m to £70.8m (as the
     # capex and dividend programme stepped up, alongside a £25m RCF draw in
     # FY2025). The floor is set at £50m, below the FY2025 actual: it is a
@@ -486,18 +581,28 @@ SCENARIOS = {
     #
     # The -100bp capex shift is not just "Base, but less". Bear's terminal
     # revenue growth is 1.5% against Base's 4.5%, and a slower-growing
-    # estate needs less investment to sustain itself. The shift is sized off
-    # the same grossed-up derivation as Base: at Bear's 1.5% terminal
-    # growth, sustaining PP&E/revenue at 38.68% needs
-    #     c_ppe = 0.386807 * (0.015 + 0.1423) / 1.015 = 5.995%
-    # which grossed up by 1 / HIST_PPE_CAPEX_SHARE is 6.403%. Base's
-    # terminal less 100bp gives 6.41% — 0.7bp above Bear's own sustaining
-    # level. So Bear's terminal capex holds PP&E/revenue at the same FY2025
-    # 38.7% that Base's does; the two scenarios differ in growth and margin,
-    # not in how capital-intensive the business is assumed to become. Capex
-    # being lower in the bear case than the base case is what a genuine
-    # demand slowdown looks like, and the resulting FCF relief is real, not
-    # a modelling artefact to be suppressed.
+    # estate needs less investment to sustain itself.
+    #
+    # Years 1-4 remain a uniform -100bp off the Base path. The TERMINAL year
+    # is now given explicitly rather than inheriting that shift, because fix
+    # round 2 recalibrated every terminal capex figure onto the
+    # post-programme anchor and each scenario's anchor is its own (Bear's
+    # estate is heaviest relative to sales because Bear grows slowest). The
+    # `_scenario` helper has always supported an explicit tuple for exactly
+    # this case. Bear's own fixed point gives:
+    #     anchor = 41.1770%  (valuation.terminal_ppe_intensity, Bear)
+    #     c_ppe  = 0.411770 * (0.015 + 0.1423) / 1.015 = 6.3817%
+    #     c      = 6.3817% / 0.936158 = 6.8168%  ->  0.0682
+    # against 6.41% before, and against the 7.77% Base terminal. Ordering is
+    # preserved in every year of the path.
+    #
+    # So Bear's terminal capex holds PP&E/revenue at Bear's own
+    # post-programme anchor, exactly as Base's holds Base's; the scenarios
+    # differ in growth and margin, not in the RULE governing how
+    # capital-intensive the business is assumed to become. Capex being lower
+    # in the bear case than the base case is what a genuine demand slowdown
+    # looks like, and the resulting FCF relief is real, not a modelling
+    # artefact to be suppressed.
     #
     # ROU additions shift by -40bp on the same reasoning, and the size of
     # the shift is set the same way: holding ROU/revenue at the FY2025
@@ -521,7 +626,9 @@ SCENARIOS = {
         growth_delta=-0.03,
         margin_delta=-0.015,
         opex_delta=0.010,
-        capex_delta=-0.010,
+        # Years 1-4 are Base less 100bp; the terminal year is Bear's own
+        # post-programme sustaining level, derived above.
+        capex_pct_revenue=(0.1227, 0.1110, 0.0960, 0.0800, 0.0682),
         rou_delta=-0.004,
         exit_ev_ebitda=8.5,
     ),
@@ -532,20 +639,31 @@ SCENARIOS = {
     # year (funding faster growth than Base must cost more, not less), and
     # the exit multiple re-rates up.
     #
-    # The shift is +80bp rather than +100bp, and it is derived, not a fudge.
-    # At Bull's 7.0% terminal growth, sustaining PP&E/revenue at 38.68%
-    # needs c_ppe = 0.386807 * (0.07 + 0.1423) / 1.07 = 7.675%, which
-    # grossed up by 1 / HIST_PPE_CAPEX_SHARE is 8.198%. Base's terminal plus
-    # 80bp gives 8.21%, 1.2bp above Bull's own sustaining level; plus 100bp
-    # would have overshot it by ~21bp.
+    # Years 1-4 are a uniform +80bp off the Base path. The TERMINAL year is
+    # given explicitly, on the same footing as Bear's and for the same
+    # reason — fix round 2 put every terminal capex figure on the
+    # post-programme anchor, and Bull's anchor is its own (lightest of the
+    # three, because Bull grows fastest against the same estate):
+    #     anchor = 40.1898%  (valuation.terminal_ppe_intensity, Bull)
+    #     c_ppe  = 0.401898 * (0.07 + 0.1423) / 1.07 = 7.9740%
+    #     c      = 7.9740% / 0.936158 = 8.5179%  ->  0.0852
+    # against 8.21% before, and against the 7.77% Base terminal.
     #
-    # Bull's +80bp gap from Base is smaller than Bear's 100bp gap almost
-    # entirely because the two scenarios' growth deltas are unequal: -3.0pp
-    # for Bear against +2.5pp for Bull. At the sustaining ratio's ~32.5bp
-    # per pp of growth around Base, that alone gives 97bp against 81bp.
-    # Curvature accounts for the remaining ~2-3bp, and it works the OPPOSITE
-    # way to the convexity an earlier round claimed. The sustaining ratio is
-    # strictly concave in growth:
+    # Note what the three anchors do NOT do: they do not order the same way
+    # the terminal capex ratios do. Bear has the HIGHEST anchor (41.18%) and
+    # the LOWEST terminal capex (6.82%), because sustaining an estate depends
+    # on growth as well as on size, and Bear's 1.5% growth needs far less
+    # replacement spend than Bull's 7.0%. Both effects are real and they pull
+    # opposite ways; the growth effect dominates.
+    #
+    # The +80bp years-1-to-4 shift is itself derived, not a fudge, and the
+    # reasoning is unchanged from the round that set it: the gap from Base is
+    # smaller than Bear's 100bp almost entirely because the growth deltas are
+    # unequal (-3.0pp for Bear against +2.5pp for Bull). At the sustaining
+    # ratio's ~32.5bp per pp of growth around Base, that alone gives 97bp
+    # against 81bp. Curvature accounts for the remaining ~2-3bp, and it works
+    # the OPPOSITE way to the convexity an earlier round claimed. The
+    # sustaining ratio is strictly concave in growth:
     #     sust(g) = (p / s) * [1 - (1 - d) / (1 + g)]
     #     sust''(g) = -2 (p / s) (1 - d) / (1 + g)^3 < 0
     # so the per-pp slope FALLS as growth rises — 33.4bp/pp across Bear's
@@ -553,12 +671,11 @@ SCENARIOS = {
     # bp off Bull's gap rather than explaining it; the unequal deltas do
     # all the work.
     #
-    # An earlier round used a symmetric +100bp and justified the overshoot
-    # (~21bp on these grossed-up numbers) as a bull case "building ahead of
-    # demand". That reading is dropped: round 2 established the principle
-    # that each scenario lands on its own sustaining level, and applying it
-    # here rather than preserving a flourish keeps all six terminal points
-    # (capex and ROU, three scenarios) on one rule.
+    # An earlier round used a symmetric +100bp and justified the overshoot as
+    # a bull case "building ahead of demand". That reading is dropped: the
+    # principle is that each scenario lands on its own sustaining level, and
+    # applying it here rather than preserving a flourish keeps all six
+    # terminal points (capex and ROU, three scenarios) on one rule.
     #
     # ROU additions shift +40bp, sized the same way: at Bull's 7.0% terminal
     # growth, holding ROU/revenue at 19.20% needs
@@ -581,7 +698,9 @@ SCENARIOS = {
         growth_delta=0.025,
         margin_delta=0.015,
         opex_delta=-0.010,
-        capex_delta=0.008,
+        # Years 1-4 are Base plus 80bp; the terminal year is Bull's own
+        # post-programme sustaining level, derived above.
+        capex_pct_revenue=(0.1407, 0.1290, 0.1140, 0.0980, 0.0852),
         rou_delta=0.004,
         exit_ev_ebitda=11.5,
     ),

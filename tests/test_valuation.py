@@ -25,7 +25,7 @@ from bluebook.reference import build_model
 from bluebook.schedules.fixed_assets import fixed_assets
 from bluebook.schedules.leases import leases
 from bluebook.valuation import (
-    enterprise_value, equity_bridge, implied_share_price,
+    after_tax_cost_of_debt, enterprise_value, equity_bridge, implied_share_price,
     terminal_value_exit_multiple, terminal_value_gordon, unlevered_fcf, wacc,
 )
 from bluebook.valuation import (
@@ -146,9 +146,17 @@ def test_bull_case_values_higher_than_bear():
 
 def test_wacc_weights_equity_and_after_tax_debt_at_the_target_structure():
     """Pins the build, not just the ordering the brief's test checks."""
+    from bluebook.assumptions import BLENDED_COST_OF_DEBT
+
     rate = wacc(BASE)
-    assert rate == pytest.approx(0.787 * 0.0895 + 0.213 * 0.055 * 0.75)
-    assert rate == pytest.approx(0.079223, abs=1e-6)
+    assert rate == pytest.approx(
+        (1 - 0.2075) * (0.04 + 0.90 * 0.055) + 0.2075 * BLENDED_COST_OF_DEBT * 0.75
+    )
+    assert rate == pytest.approx(0.077311, abs=1e-6)
+    # The rate applied to the debt leg must be the blend, not the RCF rate:
+    # the base it weights is £449.8m of leases against £25.0m of RCF.
+    assert after_tax_cost_of_debt(BASE) == pytest.approx(BLENDED_COST_OF_DEBT * 0.75)
+    assert BLENDED_COST_OF_DEBT < 0.055
     # The debt weight must be the one the bridge implies, not financial debt
     # alone. Pinning it here means a silent revert to 10% fails a test rather
     # than quietly re-introducing two definitions of debt.
@@ -330,7 +338,7 @@ def test_terminal_year_strips_the_fy2030_excess_depreciation(name):
 @pytest.mark.parametrize(
     "name,expected_pct_change",
     # Re-based terminal FCF against the raw final forecast year, per scenario.
-    [("Bear", -18.8), ("Base", 13.4), ("Bull", 33.7)],
+    [("Bear", -10.8), ("Base", 22.1), ("Bull", 41.3)],
 )
 def test_rebasing_moves_terminal_fcf_against_a_per_scenario_expectation(
     name, expected_pct_change
@@ -356,6 +364,70 @@ def test_rebasing_moves_terminal_fcf_against_a_per_scenario_expectation(
     assert (terminal.fcf / raw - 1.0) * 100 == pytest.approx(expected_pct_change, abs=0.1)
 
 
+@pytest.mark.parametrize("name", ["Bear", "Base", "Bull"])
+def test_terminal_fcf_matches_a_steady_state_reached_by_iterating_the_schedules(name):
+    """Independent construction of the terminal year, with no closed forms.
+
+    ``terminal_year()`` computes every intensity from ``p = c(1+g)/(g+d)`` and
+    its depreciation corollary. This rebuilds the same cash flow by running the
+    REAL ``fixed_assets()`` and ``leases()`` schedules 300 years forward at g*
+    on the terminal intensities, plus an explicit intangibles roll-forward, and
+    reading the converged FCF/revenue ratio straight off the result.
+
+    It shares no algebra with the thing it checks — only the drivers and the
+    definition of unlevered FCF. If the closed forms and the schedules ever
+    describe different roll-forwards, this is what says so. It is also what
+    makes the recorded percentages in the test below an expectation rather than
+    a recording: those numbers are what this construction produces.
+    """
+    drivers = SCENARIOS[name]
+    model = build_model(GREGGS_HISTORICALS, drivers)
+    terminal = terminal_year(model, drivers, GREGGS_HISTORICALS)
+    g = drivers.perpetuity_growth
+    years = 300
+    revenue = [(1.0 + g) ** t for t in range(1, years + 1)]
+
+    ppe = fixed_assets(
+        0.0,
+        revenue,
+        replace(
+            drivers,
+            capex_pct_revenue=(
+                terminal.capex_pct_revenue * terminal.ppe_capex_share,
+            ) * years,
+        ),
+    )
+    rou = leases(
+        0.0,
+        0.0,
+        revenue,
+        replace(
+            drivers,
+            rou_additions_pct_revenue=(terminal.rou_additions_pct_revenue,) * years,
+        ),
+    )
+    from bluebook.assumptions import HIST_INTANGIBLE_CAPEX_SHARE, amortisation_rate
+
+    amortisation_pct = amortisation_rate(GREGGS_HISTORICALS)
+    intangible_capex = terminal.capex_pct_revenue * HIST_INTANGIBLE_CAPEX_SHARE
+    balance, amortisation = 0.0, 0.0
+    for year_revenue in revenue:
+        amortisation = balance * amortisation_pct
+        balance += year_revenue * intangible_capex - amortisation
+
+    last_revenue = revenue[-1]
+    da = (ppe.depreciation[-1] + rou.depreciation[-1] + amortisation) / last_revenue
+    ebitda = terminal.ebitda_margin
+    fcf_ratio = (
+        (ebitda - da) * (1 - drivers.tax_rate)
+        + da
+        - terminal.capex_pct_revenue
+        - terminal.rou_additions_pct_revenue
+        - terminal.nwc_pct_revenue * g / (1 + g)
+    )
+    assert fcf_ratio == pytest.approx(terminal.fcf / terminal.revenue, rel=1e-9)
+
+
 def test_terminal_year_reproduces_the_briefed_base_case_figures():
     """Anchor on the numbers the brief states, so a silent drift is caught."""
     drivers = SCENARIOS["Base"]
@@ -364,10 +436,10 @@ def test_terminal_year_reproduces_the_briefed_base_case_figures():
     # 6.852% against the 6.575% the brief quotes: the brief's figure was struck
     # on the FY2025 anchor, which the Task 9 review moved to a post-programme
     # ~40%. The ROU intensity is unchanged because its anchor was not moved.
-    assert terminal.capex_pct_revenue == pytest.approx(0.06852, abs=5e-6)
-    assert terminal.rou_additions_pct_revenue == pytest.approx(0.03691, abs=5e-6)
-    assert terminal.fcf == pytest.approx(143.4, abs=0.1)
-    assert unlevered_fcf(model, drivers)[-1] == pytest.approx(126.4, abs=0.1)
+    assert terminal.capex_pct_revenue == pytest.approx(0.069015, abs=5e-6)
+    assert terminal.rou_additions_pct_revenue == pytest.approx(0.036910, abs=5e-6)
+    assert terminal.fcf == pytest.approx(142.3, abs=0.1)
+    assert unlevered_fcf(model, drivers)[-1] == pytest.approx(116.5, abs=0.1)
 
 
 def test_terminal_value_is_struck_on_the_rebased_year_not_the_raw_one():
@@ -396,7 +468,7 @@ def test_excess_asset_tax_shield_matches_a_year_by_year_sum():
     perpetuity, which is a known ~0.8p inconsistency against the mid-year
     terminal value it sits beside (see the module docstring).
     """
-    excess, rate, tax, rate_wacc = 245.9, 0.1423, 0.25, 0.0792229
+    excess, rate, tax, rate_wacc = 245.9, 0.1423, 0.25, 0.0773113
     explicit = 0.0
     carried = excess
     for k in range(1, 600):
@@ -406,22 +478,35 @@ def test_excess_asset_tax_shield_matches_a_year_by_year_sum():
 
 
 @pytest.mark.parametrize("name", ["Bear", "Base", "Bull"])
-def test_the_fy2029_decay_overstates_the_models_own_fy2030_gap(name):
-    """Measures the residual the FY2029 basis now carries. Was once exact.
+def test_the_fy2029_decay_lands_on_the_models_own_fy2030_gap(name):
+    """The convergence check for fix round 2, and its whole point.
 
-    The closed form decays the FY2029 excess once at (1 - d) to stand in for
-    the FY2030 excess, which assumes FY2030 capex exactly sustains the terminal
-    anchor. Under the old FY2025 anchor that was exact, because the capex
-    drivers were calibrated to hold PP&E/revenue at precisely 38.68%. Against
-    the post-programme anchor near 40% it no longer is: FY2030 capex sustains
-    the old anchor, not the new one, so the decayed excess runs high.
+    The shield's closed form decays the FY2029 excess once at (1 - d) to stand
+    in for the FY2030 excess, which is exact only if FY2030 capex exactly
+    sustains the terminal anchor.
 
-    Bounded rather than pinned, because the size of the residual is a
-    consequence of an inconsistency flagged for the owner (the explicit-period
-    capex drivers still target 38.68%) and should not be silently normalised.
-    If it ever exceeded 10% the shield would need re-basing onto the FY2030
-    excess directly.
+    History of this assertion, because the sign of it is the diagnostic:
+
+      * Round 0-1a: exact. The anchor was FY2025's 38.68% and the capex
+        drivers were calibrated to hold precisely that.
+      * Round 1: **broken, by +4.0% to +5.4%**. The anchor moved to the
+        post-programme intensity while the capex drivers still targeted
+        38.68%, so FY2030 capex under-sustained the anchor and the decayed
+        excess ran high. That drift was the measurable symptom of the model
+        converging on one steady state while valuing another.
+      * Round 2: **closed**. The capex drivers were recalibrated onto the
+        anchor, so FY2030 capex sustains it again.
+
+    The residual is now two orders of magnitude smaller and is pure rounding:
+    the driver tuples carry 4 decimal places while the fixed point does not
+    land on one. Its SIGN tracks the rounding direction of the driver exactly
+    — a driver rounded up buys more FY2030 capex, a larger true FY2030 excess,
+    and therefore a negative residual — which is asserted below, because "the
+    number got small" is a weaker claim than "what is left is only the
+    rounding, and it points the way rounding would".
     """
+    from bluebook.assumptions import HIST_PPE_CAPEX_SHARE
+
     drivers = SCENARIOS[name]
     model = build_model(GREGGS_HISTORICALS, drivers)
     valuation = value_model(model, drivers, GREGGS_HISTORICALS, GREGGS_SHARE_COUNT.value)
@@ -429,8 +514,27 @@ def test_the_fy2029_decay_overstates_the_models_own_fy2030_gap(name):
     revenue = model.income_statement["revenue"]
     actual_fy2030_excess = model.balance_sheet["ppe"][-1] - anchor * revenue[-1]
     decayed = valuation.excess_ppe * (1 - drivers.ppe_depreciation_rate)
-    overstatement = decayed / actual_fy2030_excess - 1.0
-    assert 0.0 < overstatement < 0.10
+    residual = decayed / actual_fy2030_excess - 1.0
+
+    assert abs(residual) < 0.001, (
+        f"{name}: the FY2029 excess decayed at (1 - d) gives {decayed:.2f} against "
+        f"the model's own FY2030 excess of {actual_fy2030_excess:.2f}, a "
+        f"{residual:+.3%} gap — the capex drivers and the terminal anchor have "
+        f"come apart again"
+    )
+
+    # The rounding gap in the driver, in the same units as the cause.
+    g = drivers.revenue_growth[-1]
+    unrounded_driver = (
+        anchor * (g + drivers.ppe_depreciation_rate) / (1 + g) / HIST_PPE_CAPEX_SHARE
+    )
+    rounding = drivers.capex_pct_revenue[-1] - unrounded_driver
+    assert abs(rounding) < 0.00005, f"{name}: driver is {rounding:+.6f} off its own level"
+    # Rounded up -> more FY2030 capex -> bigger true excess -> negative residual.
+    assert (rounding > 0) == (residual < 0), (
+        f"{name}: driver rounding {rounding:+.6f} and shield residual {residual:+.5%} "
+        f"do not point the way rounding would — the residual is not just rounding"
+    )
 
 
 @pytest.mark.parametrize("name", ["Bear", "Base", "Bull"])
@@ -478,8 +582,54 @@ def test_terminal_ppe_anchor_absorbs_one_average_asset_life_of_growth():
     assert anchor == pytest.approx(
         final_intensity / (1 + drivers.perpetuity_growth) ** life
     )
-    assert anchor == pytest.approx(0.40311, abs=5e-6)
+    assert anchor == pytest.approx(0.406045, abs=5e-6)
     assert life == pytest.approx(7.028, abs=0.001)
+
+
+@pytest.mark.parametrize("name", ["Bear", "Base", "Bull"])
+def test_the_model_converges_on_the_intensity_it_values(name):
+    """Fix round 2, stated as one assertion.
+
+    The explicit period's final capex driver and the perpetuity's anchor have
+    to describe the same business. Extend the model's own final year forward
+    at its own terminal REVENUE growth on its own terminal capex driver, and
+    PP&E/revenue must settle at the anchor the terminal value is struck on.
+
+    Before round 2 it settled at 38.68% while the perpetuity valued ~40.3% —
+    the model converged toward one steady state and valued another. The
+    covering evidence for that defect was the shield-decay drift measured in
+    ``test_the_fy2029_decay_lands_on_the_models_own_fy2030_gap``; this is the
+    same claim asserted directly rather than through its symptom.
+    """
+    from bluebook.assumptions import HIST_PPE_CAPEX_SHARE
+
+    drivers = SCENARIOS[name]
+    model = build_model(GREGGS_HISTORICALS, drivers)
+    anchor = terminal_year(model, drivers, GREGGS_HISTORICALS).ppe_intensity
+    growth = drivers.revenue_growth[-1]
+    years = 300
+    revenue = [(1.0 + growth) ** t for t in range(1, years + 1)]
+    schedule = fixed_assets(
+        0.0,
+        revenue,
+        replace(
+            drivers,
+            capex_pct_revenue=(
+                drivers.capex_pct_revenue[-1] * HIST_PPE_CAPEX_SHARE,
+            ) * years,
+        ),
+    )
+    settled = schedule.closing_ppe[-1] / revenue[-1]
+    # 3bp of intensity. The residual is entirely the 4-decimal rounding of the
+    # capex tuples: a driver rounded by dc moves the settled intensity by
+    # dc x HIST_PPE_CAPEX_SHARE x (1 + g) / (g + d), which for the committed
+    # tuples (0.2-0.4bp of rounding) is 1.0-2.3bp of intensity. Actuals are
+    # Bear +2.05bp, Base -2.10bp, Bull +0.98bp, each signed the same way its
+    # driver was rounded.
+    assert settled == pytest.approx(anchor, abs=3e-4), (
+        f"{name}: the terminal capex driver settles PP&E/revenue at {settled:.4%} "
+        f"but the perpetuity is struck on {anchor:.4%}"
+    )
 
 
 def test_rou_anchor_is_still_the_fy2025_actual_because_it_already_plateaued():
@@ -513,7 +663,7 @@ def test_excess_ppe_shield_is_a_terminal_date_value_and_is_discounted_as_one():
     drivers = SCENARIOS["Base"]
     model = build_model(GREGGS_HISTORICALS, drivers)
     valuation = value_model(model, drivers, GREGGS_HISTORICALS, GREGGS_SHARE_COUNT.value)
-    assert valuation.excess_ppe_tax_shield == pytest.approx(27.9, abs=0.1)
+    assert valuation.excess_ppe_tax_shield == pytest.approx(27.1, abs=0.1)
     # Same mid-year factor the terminal value gets: 4.5 years, not 5.
     assert valuation.enterprise_value == pytest.approx(
         enterprise_value(

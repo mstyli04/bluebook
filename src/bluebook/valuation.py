@@ -10,18 +10,18 @@ WACC
     cost of equity = risk_free_rate + beta x equity_risk_premium
                    = 4.00% + 0.90 x 5.50% = 8.95%
     after-tax cost of debt = cost_of_debt x (1 - tax_rate)
-                   = 5.50% x 75% = 4.125%
+                   = 4.1009% x 75% = 3.0757%
     WACC = (1 - target_debt_weight) x cost of equity
              + target_debt_weight x after-tax cost of debt
-         = 78.7% x 8.95% + 21.3% x 4.125% = 7.9223%
+         = 79.25% x 8.95% + 20.75% x 3.0757% = 7.7311%
 
 All four market inputs are judgement estimates rather than sourced facts —
 ``assumptions.py`` says so beside each one — and none of them varies by
-scenario, so the WACC is 7.9223% in Bear, Base and Bull alike and the whole
+scenario, so the WACC is 7.7311% in Bear, Base and Bull alike and the whole
 scenario spread is an operating spread. ``test_wacc_is_identical_in_every_
 scenario`` pins that, so it becomes visible if a later task changes it.
 
-``target_debt_weight`` is 21.3% and the debt base **includes lease
+``target_debt_weight`` is 20.75% and the debt base **includes lease
 liabilities**, matching the equity bridge, which deducts them as debt. An
 earlier version used 10% on financial debt alone while the bridge deducted
 £449.8m of leases — two definitions of debt inside one model. Leases are debt
@@ -32,9 +32,16 @@ out beside the driver in ``assumptions.py``.
 Including leases in the WACC is also what captures the lease-interest tax
 shield, roughly £4.5m a year. Unlevered FCF taxes EBIT and so cannot see it,
 and a lease-free debt weight did not see it either, so it was previously
-captured nowhere. Note the caveat recorded in ``assumptions.py``:
-``cost_of_debt`` is the RCF rate applied to a base that is mostly leases
-carried at a lower rate, which leaves the WACC ~22bp high.
+captured nowhere.
+
+``cost_of_debt`` is correspondingly a **blend**, 4.1009%, not the 5.50% RCF
+rate: the base it weights is £449.8m of leases carried at the 4.0231% lease
+discount rate against £25.0m of drawn RCF. Applying the RCF rate to the whole
+base left the WACC ~22bp high, which was the same shape of error as the two
+definitions of debt — a weight changed without changing what depends on it.
+``interest_rate_debt`` stays at the RCF rate, because the revolver really does
+borrow there; the blend is a cost-of-capital construct, not a rate any
+instrument pays.
 
 Deducting new ROU additions from unlevered FCF (see below) is the third leg of
 the same treatment.
@@ -80,15 +87,15 @@ carries two errors of opposite sign, neither visible on its own:
    capex and ROU drivers were derived to sustain the asset base at that
    scenario's terminal REVENUE growth — 4.5% in Base. The terminal value grows
    at ``perpetuity_growth``, 2%. A slower-growing business needs less
-   sustaining investment: total capex 6.852% of revenue at 2% growth against
-   the 7.41% FY2030 Base driver, ROU additions 3.691% against 4.06%.
+   sustaining investment: total capex 6.901% of revenue at 2% growth against
+   the 7.77% FY2030 Base driver, ROU additions 3.691% against 4.06%.
 
 Net of the two, the direction is NOT uniform across scenarios, and reading the
 Base case as a general property would be wrong:
 
-    Bear   terminal growth 1.5%  ->  re-based FCF  £77.8m vs raw  £95.8m, -18.8%
-    Base   terminal growth 4.5%  ->  re-based FCF £143.4m vs raw £126.4m, +13.4%
-    Bull   terminal growth 7.0%  ->  re-based FCF £220.7m vs raw £165.1m, +33.7%
+    Bear   terminal growth 1.5%  ->  re-based FCF  £76.7m vs raw  £86.1m, -10.8%
+    Base   terminal growth 4.5%  ->  re-based FCF £142.3m vs raw £116.5m, +22.1%
+    Bull   terminal growth 7.0%  ->  re-based FCF £219.7m vs raw £155.5m, +41.3%
 
 **The sign is not an invariant, and in particular it is not simply
 ``revenue_growth[-1] > g*``.** Three terms move on re-basing and only one of
@@ -99,8 +106,11 @@ them is signed by the growth gap:
     sustaining investment, and more if it grows faster;
   * the **D&A tax-shield** term always subtracts, because re-basing always
     strips FY2030's excess depreciation out;
-  * the **anchor** term always adds investment, because the terminal PP&E
-    anchor (~40%) sits above the 38.68% the capex drivers were built on.
+  * the **anchor** term is now neutral in the explicit period's own terms,
+    because fix round 2 recalibrated the capex drivers onto the same anchor
+    the perpetuity uses; what remains is that the terminal year applies that
+    anchor at g* rather than at the driver growth, which is the investment
+    term again.
 
 Two of the three are one-signed and negative for FCF, so the crossover sits
 strictly ABOVE ``g*`` rather than at it: at a driver growth of exactly ``g*``
@@ -158,7 +168,7 @@ back as its own present value rather than smuggled back into the perpetuity:
 where ``E`` is the FY2029 closing excess, PP&E less ``anchor x revenue``.
 This is the value AT the terminal date of the shields arising in FY2031
 onwards, so it is added to the terminal value and discounted on the same
-mid-year factor. Base: £27.9m at the terminal date, £19.8m present value,
+mid-year factor. Base: £27.1m at the terminal date, £19.4m present value,
 about 19p per share. The FY2030 shield itself stays where it belongs, inside
 the explicit FY2030 free cash flow.
 
@@ -166,23 +176,18 @@ the explicit FY2030 free cash flow.
 first shield year: its ``k = 1`` term is ``tc x d x E x (1 - d) / (1 + WACC)``,
 so ``E x (1 - d)`` is doing duty as the FY2030 excess.
 
-**That step is now approximate, and it is approximate because of the anchor
-ruling.** It used to be exact: when the terminal anchor was FY2025's 38.68%,
-FY2030 capex was precisely the level that holds PP&E/revenue flat at that
-anchor, so the excess decayed at (1 - d) with nothing added. Against the
-post-programme anchor near 40%, FY2030 capex no longer sustains the anchor,
-and ``E x (1 - d)`` overstates the model's own FY2030 excess by about 4.8%
-(Base: 174.0 against 166.0). The shield is therefore ~£1.3m high at the
-terminal date, worth about 0.9p per share.
-``test_the_fy2029_decay_overstates_the_models_own_fy2030_gap`` measures the
-residual rather than asserting a property that is no longer true.
+**That step is exact, and it is worth knowing why, because it briefly was
+not.** It holds only if FY2030 capex is precisely the level that sustains the
+terminal anchor. Fix round 1 moved the anchor off FY2025's 38.68% without
+moving the capex drivers, and ``E x (1 - d)`` immediately began overstating the
+model's own FY2030 excess by 4.0-5.4% — the measurable symptom of a model
+converging on one steady state while valuing another. Fix round 2 recalibrated
+the drivers onto the anchor and the drift closed to |0.06%|, which is pure
+4-decimal rounding in the driver tuples and whose sign tracks the rounding
+direction exactly. ``test_the_fy2029_decay_lands_on_the_models_own_fy2030_gap``
+asserts both the magnitude and that sign relationship.
 
-The root cause is worth naming: the explicit-period capex drivers in
-``assumptions.py`` are still calibrated to hold PP&E/revenue at 38.68%, while
-the perpetuity now anchors near 40%. That inconsistency is flagged in the task
-report, not fixed here — ``Drivers`` is out of scope for this task.
-
-Two further approximations, both immaterial and both left alone:
+Two approximations remain, both immaterial and both left alone:
 
   * the shield's internal terms are discounted year-end within the perpetuity
     (``(1 + WACC) ** k``) while the terminal value they sit beside is struck
@@ -190,7 +195,7 @@ Two further approximations, both immaterial and both left alone:
     ``(1 + WACC) ** 0.5``, worth about 0.8p per share;
   * the same argument runs in reverse for ROU assets, which finish BELOW their
     anchor (18.3% against 19.20% in Base), so a symmetric treatment would
-    deduct about £4.3m at the terminal date, roughly 3p per share. Not
+    deduct about £4.2m at the terminal date, roughly 3p per share. Not
     deducted: the brief mandates the PP&E add-back only.
 
 --------------------------------------------------------------------------
@@ -356,7 +361,7 @@ def terminal_ppe_intensity(model: Model, drivers: Drivers) -> float:
     permanent.
 
     The rule therefore lands strictly between the two, which is the ruling:
-    Bear 40.84%, Base 40.31%, Bull 39.94%. It is scenario-dependent because
+    Bear 41.18%, Base 40.60%, Bull 40.19%. It is scenario-dependent because
     each scenario finishes with its own estate against its own revenue, and
     the ordering is economically right — Bear grows slowest, so the same
     estate stays heaviest relative to sales.
@@ -490,8 +495,8 @@ def excess_asset_tax_shield(
 
     Returns a TERMINAL-DATE value, so the caller discounts it on the same
     factor as the terminal value. Terms inside the sum are discounted
-    year-end; see the module docstring for that and for the ~4.8% overstatement
-    the FY2029 decay now carries against the post-programme anchor.
+    year-end; see the module docstring for that, and for why the FY2029 basis
+    is exact only while the capex drivers stay calibrated to the anchor.
     """
     x = (1.0 - depreciation_rate) / (1.0 + wacc_rate)
     return tax_rate * depreciation_rate * excess * x / (1.0 - x)

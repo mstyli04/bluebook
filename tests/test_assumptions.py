@@ -145,6 +145,29 @@ def _fy2025_ppe_to_revenue() -> float:
     return y.ppe.value / y.revenue.value
 
 
+def _terminal_ppe_anchor(name: str) -> float:
+    """The PP&E/revenue intensity the perpetuity is actually struck on.
+
+    Fix round 2 recalibrated the terminal capex drivers onto this, replacing
+    the FY2025 actual. The two are different numbers — ~40.2-41.2% against
+    38.68% — and the whole point of that round was that the model must
+    converge on the intensity it values. So the tests below compare against
+    this, not against the FY2025 actual: a test still pinned to 38.68% would
+    now be asserting the very inconsistency the round removed.
+
+    It is read from ``valuation`` rather than restated here so there is one
+    definition of the anchor in the codebase. That makes these tests a check
+    of the FIXED POINT — capex sets the FY2030 balance sheet, which sets the
+    anchor, which must set that same capex back again.
+    """
+    from bluebook.inputs.greggs import GREGGS_HISTORICALS
+    from bluebook.reference import build_model
+    from bluebook.valuation import terminal_ppe_intensity
+
+    drivers = SCENARIOS[name]
+    return terminal_ppe_intensity(build_model(GREGGS_HISTORICALS, drivers), drivers)
+
+
 _CONVERGENCE_YEARS = 200
 
 
@@ -191,10 +214,11 @@ def _iterated_steady_state_ppe_to_revenue(name: str) -> tuple[float, float]:
 def test_terminal_capex_holds_ppe_to_revenue_when_the_schedule_is_iterated(name: str):
     """Terminal capex is the ratio capitalised in perpetuity, so what it has
     to be defensible against is the asset intensity it implies forever —
-    not the range observed during a build programme. The FY2025 actual
-    PP&E/revenue is ~38.7%; a terminal capex ratio implying a materially
-    different steady state is asserting, silently, that the business becomes
-    structurally more (or less) capital-intensive than it has ever been.
+    not the range observed during a build programme. That intensity is the
+    post-programme anchor the terminal value is struck on (~40.2-41.2%
+    depending on scenario); a terminal capex ratio implying a materially
+    different steady state means the model converges toward one business and
+    values another.
 
     This measures that steady state by ITERATING ``fixed_assets()`` forward
     to convergence, not by re-deriving p = c(1 + g)/(g + d). That is the
@@ -221,11 +245,11 @@ def test_terminal_capex_holds_ppe_to_revenue_when_the_schedule_is_iterated(name:
         f"{name}: the iterated PP&E schedule had not converged after "
         f"{_CONVERGENCE_YEARS} years — last move {last_move:.2e}"
     )
-    actual = _fy2025_ppe_to_revenue()
-    assert abs(converged - actual) <= 0.01, (
+    anchor = _terminal_ppe_anchor(name)
+    assert abs(converged - anchor) <= 0.01, (
         f"{name} terminal capex of {SCENARIOS[name].capex_pct_revenue[-1]:.2%} drives "
         f"the fixed-asset schedule to a steady-state PP&E/revenue of {converged:.2%} "
-        f"against the FY2025 actual {actual:.2%}"
+        f"against the terminal anchor {anchor:.2%} the perpetuity is struck on"
     )
 
 
@@ -268,10 +292,14 @@ def test_terminal_capex_equals_its_own_grossed_up_sustaining_level(name: str):
     allows 1pp of drift, which is the right band for "is this ratio sane"
     but still wide enough that a driver could sit ~80-105bp off its own
     stated derivation and pass. This one is tight: each scenario's terminal
-    must be the sustaining level at its OWN terminal growth, grossed up for
-    the intangible split, to within 5bp of rounding (the committed tuples
-    sit 0.4-1.2bp off). It is the test that catches a comment claiming 7.41%
-    over a tuple that says 7.00%.
+    must be the sustaining level at its OWN terminal growth and its OWN
+    post-programme anchor, grossed up for the intangible split, to within 5bp
+    of rounding (the committed tuples sit 0.2-0.4bp off). It is the test that
+    catches a comment claiming 7.41% over a tuple that says 7.00%.
+
+    Since round 2 this is also the fixed-point test: the anchor is read off
+    the model built from these very drivers, so it asserts that raising capex
+    to sustain the anchor does not move the anchor out from under it.
 
     The two are not redundant. This one asks whether the number matches the
     stated derivation; the iterated one asks whether the derivation matches
@@ -283,7 +311,7 @@ def test_terminal_capex_equals_its_own_grossed_up_sustaining_level(name: str):
     drivers = SCENARIOS[name]
     g = drivers.revenue_growth[-1]
     sustaining_ppe_capex = (
-        _fy2025_ppe_to_revenue() * (g + drivers.ppe_depreciation_rate) / (1 + g)
+        _terminal_ppe_anchor(name) * (g + drivers.ppe_depreciation_rate) / (1 + g)
     )
     expected_total_capex = sustaining_ppe_capex / HIST_PPE_CAPEX_SHARE
     assert drivers.capex_pct_revenue[-1] == pytest.approx(expected_total_capex, abs=0.0005), (
@@ -330,12 +358,15 @@ def test_terminal_rou_additions_hold_rou_to_revenue_near_the_last_actual(name: s
 
 
 def test_both_asset_bases_are_set_on_the_same_principle():
-    """The point of round 2, stated as an assertion.
+    """Whatever the two terminal ratios are, each must be the level that
+    sustains its own asset base at its own anchor.
 
-    Whatever the two terminal ratios are, they must both be the level that
-    sustains their own asset base — so the gap between the PP&E intensity
-    they imply and the ROU intensity they imply is no wider than the gap in
-    the actuals they are anchored to.
+    Measured against each base's OWN anchor rather than against a common one.
+    That distinction became load-bearing in fix round 2: the PP&E anchor moved
+    to a derived post-programme intensity while the ROU anchor stayed at the
+    FY2025 actual (ROU/revenue had already plateaued, so there was no
+    build-ahead to absorb). Different anchors, same rule — and it is the rule
+    this test polices, not the anchors.
     """
     from bluebook.assumptions import HIST_PPE_CAPEX_SHARE
 
@@ -351,13 +382,58 @@ def test_both_asset_bases_are_set_on_the_same_principle():
             drivers.revenue_growth[-1],
             drivers.rou_depreciation_rate,
         )
-        ppe_drift = ppe_implied - _fy2025_ppe_to_revenue()
+        ppe_drift = ppe_implied - _terminal_ppe_anchor(name)
         rou_drift = rou_implied - _fy2025_rou_to_revenue()
         assert abs(ppe_drift - rou_drift) <= 0.02, (
-            f"{name}: PP&E intensity drifts {ppe_drift:+.1%} from the FY2025 actual "
-            f"while ROU drifts {rou_drift:+.1%} — the two asset bases are being "
-            f"governed by different rules"
+            f"{name}: PP&E intensity drifts {ppe_drift:+.1%} from its terminal anchor "
+            f"while ROU drifts {rou_drift:+.1%} from the FY2025 actual — the two asset "
+            f"bases are being governed by different rules"
         )
+        # Both should be near zero, not merely near each other: "same rule"
+        # has to mean each ratio actually sustains its own base, not that the
+        # two miss by the same amount in the same direction.
+        assert abs(ppe_drift) <= 0.005, f"{name}: PP&E drift {ppe_drift:+.2%}"
+        assert abs(rou_drift) <= 0.005, f"{name}: ROU drift {rou_drift:+.2%}"
+
+
+def test_assumptions_lease_rate_matches_the_lease_schedule():
+    """The one duplicated derivation in the codebase, guarded.
+
+    ``assumptions.LEASE_DISCOUNT_RATE`` re-derives what
+    ``schedules/leases.py`` already derives, because that module does
+    ``from bluebook.assumptions import Drivers`` and importing it back would
+    make the pair import-order-dependent — fine if assumptions is imported
+    first, an ImportError if leases is. This test is what makes the
+    duplication safe: if either derivation moves, they stop matching here.
+    """
+    from bluebook.assumptions import LEASE_DISCOUNT_RATE as ASSUMPTIONS_RATE
+    from bluebook.schedules.leases import LEASE_DISCOUNT_RATE as SCHEDULE_RATE
+
+    assert ASSUMPTIONS_RATE == SCHEDULE_RATE
+
+
+def test_blended_cost_of_debt_sits_between_its_two_components():
+    """The WACC debt base is mostly leases, so the blend must sit near the
+    lease rate, not near the RCF rate.
+
+    Pins the direction as well as the value: a blend that came out above the
+    RCF rate, or below the lease rate, would be a weighting error, and one
+    that came out near the midpoint would mean the weights had been dropped.
+    """
+    from bluebook.assumptions import (
+        BLENDED_COST_OF_DEBT,
+        LEASE_DISCOUNT_RATE,
+        RCF_COST_OF_DEBT,
+    )
+
+    assert LEASE_DISCOUNT_RATE < BLENDED_COST_OF_DEBT < RCF_COST_OF_DEBT
+    # £449.8m of leases against £25.0m of RCF, so the blend sits within 8bp
+    # of the lease rate, not near the 4.76% midpoint.
+    assert BLENDED_COST_OF_DEBT - LEASE_DISCOUNT_RATE < 0.0008
+    assert all(d.cost_of_debt == BLENDED_COST_OF_DEBT for d in SCENARIOS.values())
+    # The revolver is deliberately NOT blended: it really does draw at the
+    # RCF rate.
+    assert all(d.interest_rate_debt == RCF_COST_OF_DEBT for d in SCENARIOS.values())
 
 
 def test_investment_paths_are_ordered_bull_above_base_above_bear():
