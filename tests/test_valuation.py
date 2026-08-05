@@ -110,22 +110,70 @@ def test_terminal_value_is_not_an_implausible_share_of_ev(name):
        The model does not use that number anywhere. A bound on a construction
        the model does not use cannot catch a regression in the one it does.
 
-    **The band.** 0.85-0.97. It is wide and deliberately so: the honest reading
-    is not that terminal concentration here is normal, but that it is
-    structurally high and the band's job is to catch a step-change, not to
-    certify comfort. The floor sits below Bull (the least concentrated case, at
-    ~0.93) with room for a materially stronger explicit period; the ceiling
-    sits above Bear (~0.94) but below 1.0, which is where it would go if the
-    explicit-period PV turned negative overall. Concentration this high is a
-    direct consequence of a five-year window whose first two years of FCF are
-    negative while the distribution-centre programme runs off — it is a
-    property of the forecast, not of the terminal formula.
+    **This is the sanity bound only.** It was one test doing two jobs and
+    doing neither well: a 0.97 ceiling on the terminal share lets the explicit
+    period fall to 3% of EV, and Bear's is 4.82% (£50.4m), so the explicit
+    period could have lost ~38% of its value with nothing failing. Fix round 2
+    moved concentration by 0.4-0.7pp and this test did not notice. The
+    step-change job now belongs to
+    ``test_terminal_share_of_ev_regression_pin`` below.
+
+    Stated on the explicit period rather than on the terminal share, because
+    that is the side with the economics in it. Two claims:
+
+      * the explicit period's PV is **positive** — five years that consume more
+        cash than they generate, in present-value terms, would mean the whole
+        valuation rests on the perpetuity and the forecast is pure cost;
+      * it is at least **3% of EV** — a floor, not a target. Concentration this
+        high is a real property of a five-year window whose first two years of
+        FCF are negative while the distribution-centre programme runs off, and
+        the honest reading is that it is structurally high, not that it is
+        comfortable.
+    """
+    drivers = SCENARIOS[name]
+    model = build_model(GREGGS_HISTORICALS, drivers)
+    valuation = value_model(model, drivers, GREGGS_HISTORICALS, GREGGS_SHARE_COUNT.value)
+    explicit_pv = sum(valuation.pv_fcf)
+    assert explicit_pv > 0.0, (
+        f"{name}: the explicit five years have a negative present value "
+        f"({explicit_pv:.1f}), so the entire valuation is the perpetuity"
+    )
+    assert explicit_pv / valuation.enterprise_value > 0.03, (
+        f"{name}: explicit-period PV is {explicit_pv / valuation.enterprise_value:.2%} "
+        f"of EV"
+    )
+    # The two components must foot to EV — otherwise the share above could be
+    # measured against something that is not the whole.
+    assert explicit_pv + valuation.pv_terminal_value == pytest.approx(
+        valuation.enterprise_value
+    )
+
+
+@pytest.mark.parametrize(
+    "name,recorded_share",
+    # RECORDED, not derived. These are the terminal shares the committed model
+    # produces; there is no principle that says they should be these numbers.
+    # Their job is to make a step-change in concentration visible, which the
+    # sanity bound above is far too wide to do — it did not react when fix
+    # round 2 moved every one of these by 0.4-0.7pp.
+    [("Bear", 0.9518), ("Base", 0.9399), ("Bull", 0.9306)],
+)
+def test_terminal_share_of_ev_regression_pin(name, recorded_share):
+    """Tight pin on terminal concentration. Expected to be edited, deliberately.
+
+    +/-0.5pp. If a change moves these, that is a finding to look at and then
+    re-record with the reason, not a failure to widen the band around. Any
+    round that edits these numbers should say in its report why concentration
+    moved and by how much.
     """
     drivers = SCENARIOS[name]
     model = build_model(GREGGS_HISTORICALS, drivers)
     valuation = value_model(model, drivers, GREGGS_HISTORICALS, GREGGS_SHARE_COUNT.value)
     share = valuation.pv_terminal_value / valuation.enterprise_value
-    assert 0.85 < share < 0.97
+    assert share == pytest.approx(recorded_share, abs=0.005), (
+        f"{name}: terminal value is {share:.2%} of EV against a recorded "
+        f"{recorded_share:.2%} — concentration has moved, say why"
+    )
 
 
 def test_bull_case_values_higher_than_bear():

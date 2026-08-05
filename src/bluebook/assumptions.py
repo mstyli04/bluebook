@@ -35,6 +35,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from bluebook.inputs.greggs import GREGGS_HISTORICALS
+from bluebook.lease_rate import LEASE_DISCOUNT_RATE
 
 FORECAST_YEARS = ["FY2026", "FY2027", "FY2028", "FY2029", "FY2030"]
 
@@ -216,34 +217,14 @@ HIST_ROU_DEPRECIATION_RATE = tuple(
 # rate rather than blended.
 RCF_COST_OF_DEBT = 0.055
 
-# SCHEMA GAP - this is a bare transcribed literal, not a derived figure, and
-# it is the only one in this module. Every other number here comes out of
-# GREGGS_HISTORICALS precisely so that a page citation cannot go stale against
-# the data; this one cannot, because `inputs/schema.py` has no lease_interest
-# field. `finance_costs` is a single line that bundles lease interest with RCF
-# interest and a 0.7 exceptional (18.1 total in FY2025), so 16.7 cannot be
-# divided out programmatically. Closing the gap properly needs a
-# `lease_interest` field on HistoricalYear, which is an inputs/ change and out
-# of scope here; flagged in the task report. Until then this literal and the
-# identical one in schedules/leases.py must be re-checked against the filing
-# by hand, and test_assumptions_lease_rate_matches_the_lease_schedule at least
-# guarantees they cannot disagree with each other.
-GREGGS_FY2025_LEASE_INTEREST = 16.7  # FY2025 AR p.128 (of 18.1 total finance costs)
-
-# The rate itself is derived, against FY2024's closing lease liability read
-# straight from GREGGS_HISTORICALS rather than re-transcribed:
-#     16.7 / 415.1 = 4.0231%
-#
-# This duplicates the derivation in schedules/leases.py, which is not ideal
-# and is deliberate. That module cannot be imported from here: it does
-# `from bluebook.assumptions import Drivers`, so importing it back would make
-# the pair import-order-dependent - fine if assumptions is imported first,
-# an ImportError if leases is. Duplication with a test guard is the lesser
-# evil, and test_assumptions_lease_rate_matches_the_lease_schedule asserts
-# the two derivations agree exactly, so neither can drift.
-LEASE_DISCOUNT_RATE = (
-    GREGGS_FY2025_LEASE_INTEREST / GREGGS_HISTORICALS[-2].lease_liabilities.value
-)
+# The lease rate is 16.7 / 415.1 = 4.0231%, imported from bluebook.lease_rate.
+# Fix round 2 duplicated that derivation here because schedules/leases.py does
+# `from bluebook.assumptions import Drivers` and importing it back would have
+# made the pair import-order-dependent. Round 3 extracted it into a leaf module
+# instead, which both sides import with no cycle in either direction. The
+# schema gap behind its one transcribed literal, and the fact that round 2
+# promoted that literal from a below-EBIT P&L line to an input of the WACC,
+# are documented there.
 
 # Gross-debt-weighted blend of the two rates, on the FY2025 actual balances:
 #     (25.0 x 5.5000% + 449.8 x 4.0231%) / 474.8 = 4.1009%
@@ -311,7 +292,7 @@ BASE = Drivers(
     #     c5 -> FY2030 PP&E -> anchor -> required c5
     # It converges in 20 passes (each pass moves c5 by ~15% of the previous
     # move). At the anchor of 40.6045%, g = 4.5% and d = 14.23%:
-    #     c_ppe = 0.406045 * (0.045 + 0.1423) / 1.045 = 7.2779%
+    #     c_ppe = 0.406045 * (0.045 + 0.1423) / 1.045 = 7.2777%
     #
     # But c_ppe is NOT the driver. capex_pct_revenue is a ratio of TOTAL
     # cash capex — PP&E plus intangible additions, the basis on which
@@ -319,7 +300,7 @@ BASE = Drivers(
     # HIST_PPE_CAPEX_SHARE (93.62%) of it into the fixed-asset schedule, the
     # rest going to intangibles. The sustaining requirement must therefore
     # be grossed up by 1 / HIST_PPE_CAPEX_SHARE:
-    #     c = 7.2779% / 0.936158 = 7.7740%  ->  0.0777
+    #     c = 7.2777% / 0.936158 = 7.7740%  ->  0.0777
     #
     # 7.77% rather than the 7.718% a single pass off the round-1 anchor
     # gives: the extra 5.6bp is the fixed point closing. The confirmation
@@ -591,8 +572,8 @@ SCENARIOS = {
     # `_scenario` helper has always supported an explicit tuple for exactly
     # this case. Bear's own fixed point gives:
     #     anchor = 41.1770%  (valuation.terminal_ppe_intensity, Bear)
-    #     c_ppe  = 0.411770 * (0.015 + 0.1423) / 1.015 = 6.3817%
-    #     c      = 6.3817% / 0.936158 = 6.8168%  ->  0.0682
+    #     c_ppe  = 0.411770 * (0.015 + 0.1423) / 1.015 = 6.3814%
+    #     c      = 6.3814% / 0.936158 = 6.8166%  ->  0.0682
     # against 6.41% before, and against the 7.77% Base terminal. Ordering is
     # preserved in every year of the path.
     #
@@ -645,8 +626,8 @@ SCENARIOS = {
     # post-programme anchor, and Bull's anchor is its own (lightest of the
     # three, because Bull grows fastest against the same estate):
     #     anchor = 40.1898%  (valuation.terminal_ppe_intensity, Bull)
-    #     c_ppe  = 0.401898 * (0.07 + 0.1423) / 1.07 = 7.9740%
-    #     c      = 7.9740% / 0.936158 = 8.5179%  ->  0.0852
+    #     c_ppe  = 0.401898 * (0.07 + 0.1423) / 1.07 = 7.9741%
+    #     c      = 7.9741% / 0.936158 = 8.5179%  ->  0.0852
     # against 8.21% before, and against the 7.77% Base terminal.
     #
     # Note what the three anchors do NOT do: they do not order the same way

@@ -1,3 +1,4 @@
+import os
 import pytest
 
 from bluebook.assumptions import FORECAST_YEARS, SCENARIOS
@@ -396,20 +397,78 @@ def test_both_asset_bases_are_set_on_the_same_principle():
         assert abs(rou_drift) <= 0.005, f"{name}: ROU drift {rou_drift:+.2%}"
 
 
-def test_assumptions_lease_rate_matches_the_lease_schedule():
-    """The one duplicated derivation in the codebase, guarded.
+def test_lease_rate_has_one_definition_across_both_its_consumers():
+    """Fix round 3 replaced a duplicated derivation with a leaf module.
 
-    ``assumptions.LEASE_DISCOUNT_RATE`` re-derives what
-    ``schedules/leases.py`` already derives, because that module does
-    ``from bluebook.assumptions import Drivers`` and importing it back would
-    make the pair import-order-dependent — fine if assumptions is imported
-    first, an ImportError if leases is. This test is what makes the
-    duplication safe: if either derivation moves, they stop matching here.
+    Round 2 had the derivation written out in both ``assumptions.py`` and
+    ``schedules/leases.py``, guarded by an equality test, because the schedule
+    imports ``Drivers`` from assumptions and so could not be imported back.
+    Round 3 extracted it to ``bluebook.lease_rate``, which imports only
+    ``inputs/``. This asserts the extraction actually collapsed the two into
+    one object rather than leaving a second copy behind.
     """
     from bluebook.assumptions import LEASE_DISCOUNT_RATE as ASSUMPTIONS_RATE
+    from bluebook.lease_rate import LEASE_DISCOUNT_RATE as CANONICAL
     from bluebook.schedules.leases import LEASE_DISCOUNT_RATE as SCHEDULE_RATE
 
-    assert ASSUMPTIONS_RATE == SCHEDULE_RATE
+    assert ASSUMPTIONS_RATE is CANONICAL
+    assert SCHEDULE_RATE is CANONICAL
+
+
+def test_lease_rate_denominator_is_the_fy2024_closing_liability():
+    """Keeps what the round-2 duplication accidentally bought.
+
+    That duplication was a useful accident: ``leases.py`` carried the opening
+    liability as a transcribed literal while ``assumptions.py`` read it out of
+    ``GREGGS_HISTORICALS``, so asserting the two rates equal checked the
+    figure, its source AND the year of its source at once. Collapsing to one
+    definition would have lost that, so ``lease_rate.py`` keeps the
+    transcription as an explicit cross-check constant and this is the
+    equivalent guard: the derived denominator must be FY2024's closing lease
+    liability, and must equal what the filing says.
+    """
+    from bluebook.inputs.greggs import GREGGS_HISTORICALS
+    from bluebook.lease_rate import (
+        GREGGS_FY2024_CLOSING_LEASE_LIABILITY,
+        GREGGS_FY2025_LEASE_INTEREST,
+        LEASE_DISCOUNT_RATE,
+    )
+
+    denominator = GREGGS_HISTORICALS[-2]
+    assert denominator.label == "FY2024"
+    assert denominator.lease_liabilities.value == GREGGS_FY2024_CLOSING_LEASE_LIABILITY
+    assert LEASE_DISCOUNT_RATE == pytest.approx(
+        GREGGS_FY2025_LEASE_INTEREST / GREGGS_FY2024_CLOSING_LEASE_LIABILITY
+    )
+    # FY2025's own closing liability is the wrong denominator — interest
+    # accrues on the OPENING balance — and it is close enough (449.8 vs 415.1)
+    # that the error would look plausible: 3.71% instead of 4.02%.
+    assert denominator.lease_liabilities.value != GREGGS_HISTORICALS[-1].lease_liabilities.value
+
+
+def test_lease_rate_imports_cleanly_in_either_order():
+    """The latent break the leaf module exists to remove, tested directly.
+
+    With the rate defined in ``schedules/leases.py`` and imported by
+    ``assumptions.py``, ``import bluebook.assumptions`` works while
+    ``import bluebook.schedules.leases`` raises ImportError — the schedule
+    reaches its ``from bluebook.assumptions import Drivers`` line before it has
+    defined the rate. Each import runs in its own interpreter, because within
+    one process ``sys.modules`` hides the ordering entirely.
+    """
+    import subprocess
+    import sys
+
+    for first in ("bluebook.schedules.leases", "bluebook.assumptions"):
+        result = subprocess.run(
+            [sys.executable, "-c", f"import {first}; import bluebook.valuation"],
+            capture_output=True,
+            text=True,
+            env={"PYTHONPATH": "src", "PATH": os.environ.get("PATH", "")},
+        )
+        assert result.returncode == 0, (
+            f"importing {first} first failed:\n{result.stderr}"
+        )
 
 
 def test_blended_cost_of_debt_sits_between_its_two_components():

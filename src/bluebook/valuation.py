@@ -74,8 +74,9 @@ Terminal year — why it is re-based, and how
 The terminal value is NOT struck on the raw FY2030 forecast year. Doing so
 carries two errors of opposite sign, neither visible on its own:
 
-1. **FY2030 is not a steady state.** PP&E/revenue is still 46.9% / 46.3% /
-   45.9% (Bear / Base / Bull) against a terminal anchor near 40%, the tail of
+1. **FY2030 is not a steady state.** PP&E/revenue is still 47.33% / 46.67% /
+   46.19% (Bear / Base / Bull) against terminal anchors of 41.18% / 40.60% /
+   40.19%, the tail of
    the distribution-centre build programme. The excess decays only at the
    depreciation rate, 14.23%/yr. FCF feels this solely through the tax shield
    on the extra depreciation — EBIT falls by the excess and D&A adds it
@@ -192,10 +193,11 @@ Two approximations remain, both immaterial and both left alone:
   * the shield's internal terms are discounted year-end within the perpetuity
     (``(1 + WACC) ** k``) while the terminal value they sit beside is struck
     mid-year; mid-year-ising them would scale the shield by
-    ``(1 + WACC) ** 0.5``, worth about 0.8p per share;
+    ``(1 + WACC) ** 0.5``, worth 0.6p to 0.8p per share (Base 0.7p);
   * the same argument runs in reverse for ROU assets, which finish BELOW their
-    anchor (18.3% against 19.20% in Base), so a symmetric treatment would
-    deduct about £4.2m at the terminal date, roughly 3p per share. Not
+    anchor (18.29% against 19.20% in Base), so a symmetric treatment would
+    deduct £4.3m at the terminal date, 3.0p per share (Bear 2.5p, Bull 2.8p).
+    Not
     deducted: the brief mandates the PP&E add-back only.
 
 --------------------------------------------------------------------------
@@ -258,8 +260,12 @@ def after_tax_cost_of_debt(drivers: Drivers) -> float:
 def wacc(drivers: Drivers) -> float:
     """Weighted average cost of capital at the target capital structure.
 
-    Debt weight is financial debt only; leases are handled in the bridge, not
-    in the discount rate. See the module docstring.
+    The debt base INCLUDES lease liabilities, matching the equity bridge, and
+    ``drivers.cost_of_debt`` is correspondingly a blend of the RCF rate and the
+    lease discount rate rather than the RCF rate alone. An earlier version of
+    this docstring said the opposite — financial debt only, leases handled in
+    the bridge — which was true until fix round 1 changed the weight and stayed
+    on the page until round 3. See the module docstring.
     """
     equity_weight = 1.0 - drivers.target_debt_weight
     return (
@@ -354,7 +360,7 @@ def terminal_ppe_intensity(model: Model, drivers: Drivers) -> float:
     capital intensity reverses itself, which is not what a completed build
     does.
 
-    **Why not the model's own FY2030 (46.33% Base) either.** That is a
+    **Why not the model's own FY2030 (46.67% Base) either.** That is a
     transitional peak: intensity peaks in FY2028 at 48.21% and is already
     falling by FY2030, because capex is being tapered while the over-build
     depreciates off. Capitalising the peak assumes the transitional excess is
@@ -601,8 +607,8 @@ def value_model(
     re-based terminal year, plus the explicit excess-PP&E tax shield. The exit
     multiple terminal value is computed alongside and reported, but is not
     used: ``drivers.exit_ev_ebitda`` is a pre-IFRS-16-flavoured judgement that
-    disagrees with Gordon by roughly 2x, and reconciling it needs the comps
-    sheet Task 10 builds.
+    disagrees with Gordon by 1.84x to 2.26x (Bull to Bear), and reconciling it
+    needs the comps sheet Task 10 builds.
     """
     rate = wacc(drivers)
     fcf = unlevered_fcf(model, drivers)

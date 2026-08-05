@@ -98,42 +98,28 @@ source (cash principal paid vs. the undiscounted maturity schedule).
 `LEASE_ADDITIONS_PRINCIPAL_RATE` is set to the resulting k ≈ 0.0924.
 
 --------------------------------------------------------------------------
-Lease discount rate — derivation
+Lease discount rate
 --------------------------------------------------------------------------
-Lease interest was previously charged at `drivers.cost_of_debt` (5.5%).
-That was wrong: `cost_of_debt` is the estimated pre-tax rate on Greggs'
-revolving credit facility, and an IFRS 16 lease liability is discounted at
-the rate implicit in the lease (or the incremental borrowing rate), which
-for a portfolio of shop leases signed over many years is a different — and
-here materially lower — number. Charging 5.5% overstated lease interest by
-roughly £8m a year, straight off profit before tax.
+Lease interest was once charged at `drivers.cost_of_debt`, then 5.5%, the
+estimated pre-tax rate on Greggs' revolving credit facility. That was wrong:
+an IFRS 16 lease liability is discounted at the rate implicit in the lease
+(or the incremental borrowing rate), which for a portfolio of shop leases
+signed over many years is a different — and here materially lower — number.
+Charging 5.5% overstated lease interest by roughly £8m a year, straight off
+profit before tax.
 
-The rate is instead read off the filings:
+The rate now comes from `bluebook.lease_rate`, a leaf module both this
+schedule and `assumptions.py` import. Its derivation (16.7 / 415.1 = 4.0231%),
+its filing citations, its FY2024 cross-check and the schema gap behind its one
+transcribed literal are all documented there. It lived here until fix round 3;
+it moved because `assumptions.py` needs it too, to blend the WACC's cost of
+debt, and could not import it from a module that imports `Drivers` back.
 
-    LEASE_DISCOUNT_RATE = FY2025 interest on lease liabilities
-                            / FY2025 opening lease liability
-                        = 16.7 / 415.1 = 4.02%
-
-Both figures are transcribed as named constants below rather than derived
-from `inputs/greggs.py`, because the schema has no `lease_interest` field:
-`finance_costs` (18.1 in FY2025) bundles lease interest with RCF interest
-and a 0.7 exceptional, so it cannot be divided out programmatically. This
-is the same pattern the maturity-table constants above already use.
-
-Cross-checked against the one other year that admits a clean read. Greggs
-carried nil borrowings at both ends of FY2024 (`borrowings` = 0.0 in FY2023
-and FY2024), so that year's entire finance cost is essentially lease
-interest:
-
-    FY2024: finance_costs 13.6 / FY2023 closing lease liability 319.6
-            = 4.26%
-
-which is 4.02% plus the small non-lease remainder still inside the total —
-the right answer from an independent year, in the right direction, and
-nowhere near 5.5%.
-
-`drivers.cost_of_debt` is no longer used by this module. It remains the
-right rate for the revolver in `schedules/debt.py` and for the WACC build.
+`drivers.cost_of_debt` is not used by this module. Nor is it a revolver rate
+any more: since fix round 2 it is `BLENDED_COST_OF_DEBT`, a gross-weighted
+blend of the RCF rate and this lease rate, and it is used only by the WACC
+build in `valuation.py`. The revolver in `schedules/debt.py` charges
+`drivers.interest_rate_debt`, which is the RCF rate.
 """
 
 from __future__ import annotations
@@ -141,6 +127,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from bluebook.assumptions import Drivers
+from bluebook.lease_rate import LEASE_DISCOUNT_RATE
 
 # See "Implied average lease term — derivation" above.
 # Source: FY2025 AR p.154 (Note 11, "Leases" — remaining maturities of lease
@@ -159,16 +146,9 @@ IMPLIED_LEASE_TERM_YEARS = (
 # lease additions.
 LEASE_ADDITIONS_PRINCIPAL_RATE = 0.0924
 
-# See "Lease discount rate — derivation" in the module docstring above.
-# Transcribed from the filings in the same style as the maturity-table
-# constants above, because inputs/schema.py has no lease_interest field:
-# `finance_costs` is a single line that mixes lease interest with RCF
-# interest and exceptionals.
-GREGGS_FY2025_LEASE_INTEREST = 16.7  # FY2025 AR p.128 (of 18.1 total finance costs)
-GREGGS_FY2025_OPENING_LEASE_LIABILITY = 415.1  # FY2024 AR p.129 closing = FY2025 opening
-LEASE_DISCOUNT_RATE = (
-    GREGGS_FY2025_LEASE_INTEREST / GREGGS_FY2025_OPENING_LEASE_LIABILITY
-)  # ~4.02%
+# Re-exported so this module keeps a stable surface for its existing
+# importers; the single definition lives in bluebook.lease_rate.
+LEASE_DISCOUNT_RATE = LEASE_DISCOUNT_RATE
 
 
 @dataclass(frozen=True)
