@@ -139,6 +139,108 @@ def test_every_transcribed_peer_figure_is_pinned():
         ), p.name
 
 
+def test_ssp_ebitda_is_the_sum_of_three_printed_figures():
+    """SSP verified line by line, fix round 3 — the last unverified peer.
+
+    SSP prints NO post-IFRS 16 underlying EBITDA, so the figure must be
+    constructed. It is now constructed from three PRINTED figures rather than a
+    four-component D&A build-up, which makes it independent of the one SSP
+    reading that is still ambiguous (amortisation, 10.4 or 10.5):
+
+        pre-IFRS 16 underlying EBITDA            364.1  printed
+      + depreciation of right-of-use assets      276.8  printed
+      + IFRS 16 impact on underlying op costs     46.3  printed (reconciliation)
+      = 687.2
+    """
+    printed_pre_ifrs16_ebitda = 364.1
+    printed_rou_depreciation = 276.8
+    printed_ifrs16_operating_cost_impact = 46.3
+    ssp = next(p for p in PEERS if p.name == "SSP Group")
+    assert ssp.ebitda == pytest.approx(
+        printed_pre_ifrs16_ebitda
+        + printed_rou_depreciation
+        + printed_ifrs16_operating_cost_impact
+    )
+    # EBIT is itself a printed line, "Underlying operating profit 269.1", and the
+    # IFRS 16 impact on operating profit ties to the same 46.3.
+    printed_pre_ifrs16_operating_profit = 222.8
+    assert ssp.ebit - printed_pre_ifrs16_operating_profit == pytest.approx(
+        printed_ifrs16_operating_cost_impact
+    )
+    # And the non-underlying total ties: 269.1 underlying less 86.1 statutory.
+    printed_statutory_operating_profit = 86.1
+    assert ssp.ebit - printed_statutory_operating_profit == pytest.approx(183.0)
+
+
+def test_the_ssp_narrative_route_is_the_one_that_produced_the_1_3m_residual():
+    """Why the reconciliation table beat the narrative sentence.
+
+    SSP's prose says right-of-use depreciation of £276.8m "does not fully offset
+    the recognition of fixed rents of £(321.8)m". Taking that literally implies
+    an IFRS 16 operating-profit effect of -45.0, where the reconciliation table
+    states -46.3. The £1.3m gap was the "unreconciled residual" carried for two
+    rounds; it is an artefact of preferring prose to a table, not a defect in
+    the figure. This test records the wrong route so the resolution stays legible.
+    """
+    narrated_fixed_rents = 321.8
+    printed_rou_depreciation = 276.8
+    printed_ifrs16_operating_cost_impact = 46.3
+    narrative_effect = printed_rou_depreciation - narrated_fixed_rents
+    table_effect = -printed_ifrs16_operating_cost_impact
+    assert narrative_effect == pytest.approx(-45.0)
+    assert table_effect - narrative_effect == pytest.approx(-1.3)
+    # The rent actually reversed is therefore 323.1, not 321.8.
+    assert printed_rou_depreciation + printed_ifrs16_operating_cost_impact == (
+        pytest.approx(323.1)
+    )
+
+
+def test_ssp_net_debt_ties_to_the_face_of_its_balance_sheet():
+    """The EV build checked on the same footing as the other four.
+
+    SSP's concession fees are partly turnover-linked, so less of its rent
+    capitalises than Greggs' — a point the module makes about comparability. It
+    does not affect the EV build, which ties exactly.
+    """
+    ssp = next(p for p in PEERS if p.name == "SSP Group")
+    short_term_borrowings, long_term_borrowings = 118.5, 797.7
+    lease_current, lease_non_current = 321.9, 920.8
+    cash = 342.0
+    assert ssp.lease_liabilities == pytest.approx(lease_current + lease_non_current)
+    assert ssp.net_debt_incl_leases == pytest.approx(
+        short_term_borrowings + long_term_borrowings + ssp.lease_liabilities - cash
+    )
+
+
+def test_every_peer_ebit_is_a_printed_operating_profit_line():
+    """The register in the PROVENANCE section, as an assertion.
+
+    All five EBITs are printed operating-profit lines; three of five EBITDAs are
+    constructed. The derived exit multiple depends only on the median EV/EBIT, so
+    the load-bearing statistic rests entirely on printed subtotals. If a later
+    change makes an EBIT constructed, this list must change with it.
+    """
+    printed_ebit = {
+        "SSP Group": 269.1,                 # "Underlying operating profit 269.1"
+        "Domino's Pizza Group": 111.2,      # "Underlying EBIT1 111.2"
+        "J D Wetherspoon": 146.4,           # "Operating profit 146.4" pre-SDI
+        "Mitchells & Butlers": 330.0,       # "Adjusted operating profit of £330m"
+        "Whitbread": 649.0,                 # "Adjusted operating profit £649m"
+    }
+    assert set(printed_ebit) == {p.name for p in PEERS}
+    for p in PEERS:
+        assert p.ebit == pytest.approx(printed_ebit[p.name]), p.name
+    # Two of five EBITDAs are printed or printed-plus-reconciliation; three are
+    # constructed from an operating profit plus D&A components.
+    constructed_ebitda = {"J D Wetherspoon", "Mitchells & Butlers", "Whitbread"}
+    assert constructed_ebitda < {p.name for p in PEERS}
+    # The median EV/EBIT — the only statistic drivers depend on — is a printed one.
+    median_ev_ebit = multiples(PEERS)["ev_ebit"]["median"]
+    assert any(
+        p.ev / p.ebit == pytest.approx(median_ev_ebit) for p in PEERS
+    )
+
+
 def test_exactly_one_peer_is_loss_making():
     assert [p.name for p in PEERS if p.net_income < 0.0] == ["SSP Group"]
 

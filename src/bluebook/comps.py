@@ -76,8 +76,11 @@ a reader to infer from a table that presents both at once.
 
 What partially offsets that: **every peer's figures cross-check internally
 against five or six independently quoted lines from the same announcement.**
-SSP: 222.8 + 130.8 + 10.5 = 364.1 exactly against the printed £364.1m, and
-269.1 - 222.8 = 46.3 against the stated IFRS 16 effect. Domino's:
+SSP: 364.1 + 276.8 + 46.3 = 687.2 from three printed figures, 269.1 - 222.8 =
+46.3 against the reconciliation table's operating-cost impact, 269.1 - 86.1 =
+183.0 against the printed non-underlying total, 321.9 + 920.8 = 1,242.7, and
+118.5 + 797.7 + 1,242.7 - 342.0 = 1,816.9 against the printed net debt.
+Domino's:
 309.2 - 24.6 = 284.6, 22.9 + 217.2 = 240.1, and 7.9 + 6.6 + 7.6 + 0.6 = 22.7
 against the printed D&A-and-impairment line. Wetherspoon:
 72.205 + 2.003 + 0.218 + 39.939 = 114.365 against the stated total, and
@@ -119,11 +122,54 @@ and 101.1 + 28.6 = 129.7, not the 133.9 on the line above. A reader checking the
 comment against itself, rather than each figure against its source, would have
 found it. That is now the standard applied to every peer comment here.
 
-**Two residuals are left standing rather than absorbed**, both flagged again at
-the figure itself: **SSP £1.3m** (0.19% of its EBITDA — its pre-IFRS 16 EBITDA
-reconciles one way but not the other) and **Whitbread £2m** (0.2% — the gap
-between the derived post-IFRS 16 EBITDA of £1,076m and the company's stated
-"Adjusted EBITDAR" of £1,074m, which the announcement does not explain).
+--------------------------------------------------------------------------
+PRINTED versus CONSTRUCTED: which figure rests on what
+--------------------------------------------------------------------------
+Because two of the five peers turned out to carry basis errors, a reader needs
+to see which figures are the company's own printed subtotals and which this
+module built. **All five EBITs are printed. Two of five EBITDAs rest on printed
+figures; three are constructed**, and no peer prints a post-IFRS 16 EBITDA
+except Domino's.
+
+    peer          EBITDA                              EBIT
+    ----------------------------------------------------------------------
+    Domino's      PRINTED "Underlying EBITDA1 133.9"  PRINTED "Underlying
+                                                       EBIT1 111.2"
+    SSP           PRINTED subtotal + PRINTED           PRINTED "Underlying
+                  reconciliation line: 364.1 +         operating profit 269.1"
+                  276.8 + 46.3 = 687.2. No
+                  post-IFRS 16 EBITDA is printed.
+    Wetherspoon   CONSTRUCTED 146.409 + 114.365.       PRINTED "Operating
+                  The printed £203.3m is PRE-IFRS       profit 146.4" before
+                  16 and is not used.                   separately disclosed items
+    M&B           CONSTRUCTED 330 + 135. No            PRINTED "Adjusted
+                  underlying EBITDA is printed.         operating profit £330m"
+    Whitbread     CONSTRUCTED 649 + 209 + 218 =        PRINTED "Adjusted
+                  1,076. The printed "Adjusted          operating profit £649m"
+                  EBITDAR" £1,074m differs by £2m
+                  and is NOT used.
+
+**Why that pattern is reassuring where it matters.** The derived exit multiple
+depends only on the peer **median EV/EBIT** — and every one of the five EBIT
+figures is a printed operating-profit line. The load-bearing statistic in this
+whole module therefore rests entirely on printed subtotals. The constructed
+EBITDAs feed the EV/EBITDA range, the comps-implied value bar and the
+capital-intensity cross-check, all of which are presentational or corroborative
+rather than inputs to ``drivers``.
+
+Line-by-line verification status, so nobody re-does settled work or trusts
+unsettled work: Wetherspoon and Whitbread were verified line by line at review;
+Domino's and M&B in fix round 2, each against a printed subtotal that corrected
+a shipped figure; SSP in fix round 3, against printed subtotals with no figure
+changing.
+
+**One residual is left standing rather than absorbed**, flagged again at the
+figure itself: **Whitbread £2m** (0.2% — the gap between the derived post-IFRS 16
+EBITDA of £1,076m and the company's stated "Adjusted EBITDAR" of £1,074m, which
+the announcement does not explain). **The SSP £1.3m residual is RESOLVED** — see
+the note beside SSP: it was an artefact of preferring SSP's narrative sentence
+about fixed rents to its reconciliation table, and the table's £46.3m
+operating-cost impact closes it exactly.
 
 Practical consequence: the peer set is strong enough to rule out a 10x exit
 multiple and to set one at ~6.3x, which is what it is used for. It is not strong
@@ -598,29 +644,89 @@ PEERS: list[Peer] = [
         shares=762.24,
         market_cap=1618.998,         # 2.1240 x 762.24 = 1,618.998
         # ---- FY2025, year ended 30 September 2025 ----
+        # VERIFIED LINE BY LINE against the announcement, fix round 3. SSP was
+        # the last peer resting on neither a printed subtotal nor a line-by-line
+        # check, and it is the most load-bearing name in the set. No figure
+        # changed; what changed is that the EBITDA no longer rests on a
+        # four-component build-up, and the £1.3m residual is resolved.
+        #
         # Reported net debt of £1,816.9m is the IFRS figure and INCLUDES the
-        # £1,242.7m lease liability; SSP's own headline leverage uses a
-        # pre-IFRS 16 net debt of £574.2m, which is NOT used here.
+        # £1,242.7m lease liability. It ties to the face of the balance sheet
+        # exactly:
+        #     short-term borrowings      118.5
+        #   + long-term borrowings       797.7
+        #   + lease liabilities        1,242.7   (321.9 current + 920.8 non-current)
+        #   - cash and equivalents       342.0
+        #   = 1,816.9
+        # SSP's own headline leverage uses a pre-IFRS 16 net debt of £574.2m,
+        # which is NOT used here.
         net_debt_incl_leases=1816.9,
-        lease_liabilities=1242.7,
+        lease_liabilities=1242.7,    # 321.9 current + 920.8 non-current, per the balance sheet
         minority_interests=186.8,    # balance sheet NCI; SSP consolidates JV concessions
         ev=3622.698,                 # 1,618.998 + 1,816.9 + 186.8
-        # Underlying operating profit on the IFRS (post-IFRS 16) basis, £269.1m,
-        # plus underlying D&A: PP&E 130.8 + right-of-use 276.8 + intangibles 10.5.
-        #   269.1 + 418.1 = 687.2
-        # Cross-check against SSP's own pre-IFRS 16 measure: pre-IFRS 16
-        # underlying operating profit 222.8 + 130.8 + 10.5 = 364.1, which is
-        # exactly the £364.1m SSP prints, so the D&A split is right. Going the
-        # other way, 687.2 - 321.8 of fixed rents = 365.4, £1.3m above the
-        # printed 364.1; SSP's stated IFRS 16 effect on underlying operating
-        # profit is -46.3 while 276.8 - 321.8 is -45.0, the same £1.3m. It is
-        # 0.19% of EBITDA, it is left unreconciled, and it is flagged rather
-        # than silently absorbed.
+        #
+        # EBITDA. **SSP prints NO post-IFRS 16 underlying EBITDA** — the only
+        # EBITDA on the page is "Pre-IFRS 16 underlying EBITDA 364.1". So this
+        # figure must be constructed, but it is now constructed from three
+        # PRINTED figures rather than from a four-component D&A build-up:
+        #
+        #     pre-IFRS 16 underlying EBITDA                     364.1   (printed)
+        #   + depreciation of right-of-use assets               276.8   (printed)
+        #   + IFRS 16 impact on underlying operating costs        46.3   (printed,
+        #                                     pre-IFRS 16 reconciliation table)
+        #   = 687.2
+        #
+        # That form is EXACT and, importantly, INDEPENDENT OF THE AMORTISATION
+        # FIGURE. Pre-IFRS 16 EBITDA already contains PP&E depreciation and
+        # amortisation; going to the post-IFRS 16 basis only adds back ROU
+        # depreciation and reverses the rent, and the reconciliation table states
+        # the net operating-cost effect directly.
+        #
+        # **The £1.3m "unreconciled residual" is resolved and was never a defect
+        # in this figure.** It came from preferring SSP's NARRATIVE sentence —
+        # "adding back the depreciation of the right-of-use assets of £276.8m
+        # does not fully offset the recognition of fixed rents of £(321.8)m" — to
+        # its reconciliation TABLE. The table's operating-cost impact is £46.3m,
+        # so the rent actually reversed is 276.8 + 46.3 = 323.1, not 321.8. The
+        # narrative names the two largest components of the IFRS 16 effect, not
+        # all of it. Prose lost to the table, which is the same ruling C1 forced.
+        #
+        # A residual reading ambiguity, recorded because it is unresolved and
+        # NOT load-bearing: "Amortisation of intangible assets" reads (10.4) in
+        # two retrievals and (10.5) in a third. The printed subtotals imply 10.5
+        # (364.1 - 222.8 - 130.8), but each of those is rounded to 0.1 so the
+        # implication is 10.5 +/- 0.15 and cannot settle it; and £10.4m is also
+        # SSP's statutory loss before tax, which is a plausible mis-read on the
+        # same page. The build-up above needs no amortisation figure at all, so
+        # the ambiguity moves nothing. Had this figure still been load-bearing,
+        # a 0.1 difference would move EBITDA to 687.1 and EV/EBITDA from 5.2717x
+        # to 5.2724x, and EV/EBIT not at all.
         ebitda=687.2,
+        #
+        # EBIT is SSP's PRINTED line, "Underlying operating profit 269.1" on the
+        # IFRS basis. Two basis checks, which are the ones C1 and I1 turned on:
+        #   * the D&A added back above is the UNDERLYING amount. Impairments are
+        #     presented SEPARATELY as non-underlying items (goodwill 32.3, PP&E
+        #     50.7, right-of-use 33.8, total non-underlying operating items
+        #     183.0), so there is no C1-style mixing of an underlying subtotal
+        #     with total D&A. 269.1 - 86.1 = 183.0 ties.
+        #   * 269.1 EXCLUDES share of profit from associates, which the
+        #     reconciliation table shows on its own line below operating profit
+        #     (8.2 underlying IFRS). EBITDA and EBIT are therefore
+        #     wholly-consolidated measures. Strictly, EV should then also deduct
+        #     the carrying value of those associates; the announcement does not
+        #     give it, so it is not deducted and this note is the disclosure.
+        #     £8.2m is 3.05% of underlying EBIT, so the omission overstates SSP's
+        #     EV/EBIT by roughly that order. The same point applies to Domino's,
+        #     which also carries associates.
         ebit=269.1,
         # Statutory, and a LOSS: £183.0m of non-underlying charges sit between
         # £269.1m underlying and £86.1m statutory operating profit. Excluded
-        # from the P/E statistics by multiples().
+        # from the P/E statistics by multiples(). Note SSP's UNDERLYING IFRS
+        # attributable profit is +88.4 — the sign flip is entirely
+        # non-underlying, and the mixed basis (underlying EBITDA/EBIT against
+        # statutory net income) is the module-wide convention, not an SSP
+        # special case.
         net_income=-74.4,
         source=(
             "SSP Group plc, '2025 Full Year Results Announcement' RNS, 4 December 2025, "
