@@ -8,6 +8,7 @@ from bluebook.comps import (
     PEERS,
     PRICE_OBSERVATION_DATE,
     Peer,
+    exit_multiple_from_peers,
     greggs_trading_multiples,
     implied_value_from_comps,
     intensity_matched_multiple,
@@ -213,7 +214,15 @@ def test_conversion_cuts_the_multiple_when_leases_capitalise_below_it():
     assert got == pytest.approx(7.25)
 
 
-def test_conversion_of_the_base_exit_multiple_moves_it_by_under_one_turn():
+#: The Base ``exit_ev_ebitda`` as it stood BEFORE fix round 1 recalibrated it.
+#: Kept as a literal because the conversion arithmetic below is a finding about
+#: that number, and ``drivers.exit_ev_ebitda`` is no longer a pre-IFRS 16
+#: figure to feed the conversion — it is now derived post-IFRS 16 from the peer
+#: set, so converting it again would be a basis error in the other direction.
+SUPERSEDED_BASE_EXIT_MULTIPLE = 10.0
+
+
+def test_conversion_of_the_superseded_base_multiple_moves_it_by_under_one_turn():
     """Against the handover's expectation, and this is the finding.
 
     The handover said a 10x pre-IFRS 16 multiple is "roughly 7-8x" post-IFRS
@@ -221,18 +230,47 @@ def test_conversion_of_the_base_exit_multiple_moves_it_by_under_one_turn():
     capitalises the rent at only 5.40x, so the numerator gains almost as much
     as the denominator. The conversion closes about a fifth of the gap to
     Gordon, not most of it.
+
+    This is why the driver could not simply be converted and kept: 9.03x is
+    still above the whole peer read, which is what forced the derivation in
+    ``exit_multiple_from_peers()``.
     """
     drivers = SCENARIOS["Base"]
     model = build_model(GREGGS_HISTORICALS, drivers)
     leases = model.leases
     converted = post_ifrs16_multiple(
-        pre_ifrs16_multiple=drivers.exit_ev_ebitda,
+        pre_ifrs16_multiple=SUPERSEDED_BASE_EXIT_MULTIPLE,
         ebitda_post=model.ebitda[-1],
         lease_liabilities=leases.closing_liability[-1],
         fixed_lease_payments=leases.principal_paid[-1] + leases.interest[-1],
     )
     assert converted == pytest.approx(9.0308, abs=1e-4)
-    assert drivers.exit_ev_ebitda - converted < 1.0
+    assert SUPERSEDED_BASE_EXIT_MULTIPLE - converted < 1.0
+    # And the shipped driver is 2.72 turns below the converted old one: the
+    # basis conversion alone would not have got there, which is the whole
+    # reason the driver had to be re-derived rather than merely restated.
+    assert converted - drivers.exit_ev_ebitda == pytest.approx(2.7173, abs=1e-3)
+
+
+def test_the_shipped_driver_is_already_post_ifrs16_and_must_not_be_converted():
+    """A guard against the most likely future misuse of this module.
+
+    ``post_ifrs16_multiple()`` takes a PRE-IFRS 16 multiple. Feeding it the
+    shipped driver — which is now derived post-IFRS 16 — would strip the lease
+    basis out a second time and land at 6.12x for Base. The test records that
+    number so the mistake is recognisable if anyone makes it.
+    """
+    drivers = SCENARIOS["Base"]
+    model = build_model(GREGGS_HISTORICALS, drivers)
+    leases = model.leases
+    wrong = post_ifrs16_multiple(
+        pre_ifrs16_multiple=drivers.exit_ev_ebitda,
+        ebitda_post=model.ebitda[-1],
+        lease_liabilities=leases.closing_liability[-1],
+        fixed_lease_payments=leases.principal_paid[-1] + leases.interest[-1],
+    )
+    assert wrong == pytest.approx(6.1214, abs=1e-4)
+    assert wrong < drivers.exit_ev_ebitda
 
 
 def test_conversion_rejects_a_nil_ebitda():
@@ -241,6 +279,109 @@ def test_conversion_rejects_a_nil_ebitda():
             pre_ifrs16_multiple=10.0, ebitda_post=0.0, lease_liabilities=500.0,
             fixed_lease_payments=100.0,
         )
+
+
+# ---------------------------------------------------------------------------
+# The recalibrated exit multiple (owner ruling, fix round 1)
+# ---------------------------------------------------------------------------
+
+def _terminal_intensity(name):
+    from bluebook.inputs.greggs import GREGGS_SHARE_COUNT
+    from bluebook.valuation import value_model
+
+    drivers = SCENARIOS[name]
+    model = build_model(GREGGS_HISTORICALS, drivers)
+    valuation = value_model(
+        model, drivers, GREGGS_HISTORICALS, GREGGS_SHARE_COUNT.value
+    )
+    return valuation.terminal.da / model.ebitda[-1]
+
+
+def test_the_shipped_exit_multiples_are_the_peer_derived_ones():
+    """Ties the three literals in ``assumptions.py`` back to the peer set.
+
+    ``assumptions.py`` cannot import ``comps`` (comps imports HIST_NET_INCOME
+    from it, so that would close a cycle), which is why the drivers carry
+    literals. This test is the thing that stops the literals and the derivation
+    drifting apart — the same literal-plus-covering-test pattern the HIST_*
+    constants use.
+    """
+    expected = {"Bear": 5.0679, "Base": 6.3135, "Bull": 7.2351}
+    for name, literal in expected.items():
+        derived = exit_multiple_from_peers(_terminal_intensity(name), PEERS)
+        assert derived == pytest.approx(literal, abs=5e-5), name
+        assert SCENARIOS[name].exit_ev_ebitda == pytest.approx(literal), name
+
+
+def test_the_derived_exit_multiples_are_ordered_bull_above_base_above_bear():
+    """The ordering is NOT imposed, it falls out of the capital intensities.
+
+    Bear runs the heaviest asset base against the smallest revenue, so its
+    terminal D&A absorbs the most EBITDA (62.26% against Bull's 46.12%) and its
+    coherent EBITDA multiple is the lowest.
+    """
+    bear, base, bull = (SCENARIOS[n].exit_ev_ebitda for n in ("Bear", "Base", "Bull"))
+    assert bear < base < bull
+    intensities = [_terminal_intensity(n) for n in ("Bear", "Base", "Bull")]
+    assert intensities[0] > intensities[1] > intensities[2]
+    # The spread narrowed relative to the discarded +/-1.5 offsets (3.0 turns),
+    # because capital intensity varies less across scenarios than they asserted.
+    assert bull - bear == pytest.approx(2.1672, abs=1e-4)
+
+
+def test_recalibrating_the_exit_multiple_leaves_the_terminal_intensity_untouched():
+    """The derivation is one-pass, not a fixed point, and this proves it.
+
+    ``exit_ev_ebitda`` feeds only ``terminal_value_exit_multiple``, which is
+    reported and never used to build enterprise value. So it cannot move the
+    terminal D&A share it is derived from. If a later task wires the exit
+    multiple into the headline EV, this test fails and the derivation would need
+    solving as a fixed point instead.
+    """
+    from dataclasses import replace
+
+    for name in SCENARIOS:
+        before = _terminal_intensity(name)
+        drivers = replace(SCENARIOS[name], exit_ev_ebitda=99.0)
+        model = build_model(GREGGS_HISTORICALS, drivers)
+        from bluebook.inputs.greggs import GREGGS_SHARE_COUNT
+        from bluebook.valuation import value_model
+
+        valuation = value_model(
+            model, drivers, GREGGS_HISTORICALS, GREGGS_SHARE_COUNT.value
+        )
+        after = valuation.terminal.da / model.ebitda[-1]
+        assert after == pytest.approx(before), name
+        # And the headline price is likewise untouched.
+        assert valuation.share_price_pence == pytest.approx(
+            value_model(
+                build_model(GREGGS_HISTORICALS, SCENARIOS[name]),
+                SCENARIOS[name],
+                GREGGS_HISTORICALS,
+                GREGGS_SHARE_COUNT.value,
+            ).share_price_pence
+        ), name
+
+
+def test_exit_multiple_from_peers_rejects_an_impossible_intensity():
+    with pytest.raises(ValueError, match="fraction"):
+        exit_multiple_from_peers(1.0, PEERS)
+    with pytest.raises(ValueError, match="fraction"):
+        exit_multiple_from_peers(-0.01, PEERS)
+
+
+def test_the_peer_median_ev_ebit_is_robust_to_dropping_the_property_outlier():
+    """The derivation rests on the median EV/EBIT, so its robustness matters.
+
+    Mitchells & Butlers at 9.13x is the one peer flagged as partly a property
+    multiple. Dropping it moves the median EV/EBIT by 0.13%, which is why the
+    derivation is not sensitive to that judgement call.
+    """
+    full = multiples(PEERS)["ev_ebit"]["median"]
+    without = multiples([p for p in PEERS if p.name != "Mitchells & Butlers"])
+    assert without["ev_ebit"]["median"] / full - 1.0 == pytest.approx(
+        0.0013, abs=1e-4
+    )
 
 
 # ---------------------------------------------------------------------------

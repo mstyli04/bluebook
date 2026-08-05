@@ -767,22 +767,57 @@ def test_implied_share_price_is_ordered_bull_above_base_above_bear():
 
 
 # ---------------------------------------------------------------------------
-# The exit-multiple disagreement — flagged for Task 10, not fixed here.
+# The exit-multiple disagreement — narrowed by Task 10, deliberately not closed.
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("name", ["Bear", "Base", "Bull"])
-def test_gordon_implies_a_far_lower_exit_multiple_than_the_driver(name):
-    """Documents the open disagreement rather than papering over it.
+@pytest.mark.parametrize(
+    "name,ratio", [("Bear", 1.3462), ("Base", 1.2172), ("Bull", 1.1597)]
+)
+def test_gordon_still_implies_a_lower_exit_multiple_than_the_driver(name, ratio):
+    """Documents the REMAINING disagreement rather than papering over it.
 
-    `exit_ev_ebitda` is set against pre-IFRS-16 intuition; post-IFRS 16 EBITDA
-    adds rent back, so the coherent multiple is structurally lower. Task 10's
-    comps sheet supplies the market-based number to reconcile against. If that
-    task recalibrates `exit_ev_ebitda`, this test is the one that should
-    change, and it should change deliberately.
+    **This test changed deliberately in Task 10 fix round 1**, which is exactly
+    what its previous version said should happen. It used to assert the
+    disagreement exceeded 1.5x in every scenario, when `exit_ev_ebitda` was
+    8.5 / 10.0 / 11.5 — figures set against pre-IFRS-16 intuition and resting on
+    nothing. Those are now DERIVED from the Task 10 peer set at each scenario's
+    own terminal capital intensity: 5.0679 / 6.3135 / 7.2351. See
+    `comps.exit_multiple_from_peers()`.
+
+    The disagreement narrowed from 1.84x-2.26x to **1.16x-1.35x** and is pinned
+    per scenario here. It is NOT closed, and it should not be: the residual is a
+    genuine difference between what the peer set pays for this capital intensity
+    and what the model's own terminal reinvestment implies, and Task 10's report
+    sets out why. Two methods agreeing exactly would be more suspicious than two
+    differing by a fifth with a stated reason.
+
+    Note the direction is unchanged — Gordon is still below the driver in every
+    scenario — so nothing about the headline valuation's conservatism moved.
     """
     drivers = SCENARIOS[name]
     model = build_model(GREGGS_HISTORICALS, drivers)
     valuation = value_model(model, drivers, GREGGS_HISTORICALS, GREGGS_SHARE_COUNT.value)
     implied = valuation.terminal_value_gordon / model.ebitda[-1]
     assert implied < drivers.exit_ev_ebitda
-    assert valuation.terminal_value_exit_multiple / valuation.terminal_value_gordon > 1.5
+    assert valuation.terminal_value_exit_multiple / valuation.terminal_value_gordon == (
+        pytest.approx(ratio, abs=1e-4)
+    )
+
+
+def test_recalibration_did_not_move_the_headline_share_price():
+    """The whole point of the recalibration being a presentation fix.
+
+    `exit_ev_ebitda` feeds only `terminal_value_exit_multiple`, which is reported
+    and never used to build enterprise value. The headline price is struck on
+    Gordon, and these three figures are unchanged from before fix round 1. If
+    this test ever fails, the exit multiple has been wired into the headline and
+    the derivation in `assumptions.py` would need re-solving as a fixed point.
+    """
+    expected = {"Bear": 624.7, "Base": 1506.5, "Bull": 2560.7}
+    for name, price in expected.items():
+        drivers = SCENARIOS[name]
+        model = build_model(GREGGS_HISTORICALS, drivers)
+        valuation = value_model(
+            model, drivers, GREGGS_HISTORICALS, GREGGS_SHARE_COUNT.value
+        )
+        assert valuation.share_price_pence == pytest.approx(price, abs=0.05), name

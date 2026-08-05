@@ -5,8 +5,14 @@ own filings. Everything before it was internally consistent but self-referential
 the terminal value, the WACC and the exit multiple were all calibrated against
 each other. The peer set exists to settle one question the model could not settle
 on its own — what multiple of EBITDA a business like this actually changes hands
-at — and to price the FY2030 exit that ``drivers.exit_ev_ebitda`` asserts without
-support.
+at.
+
+**It now SETS ``drivers.exit_ev_ebitda`` rather than merely arguing with it.**
+Owner ruling, fix round 1: the three scenario multiples are derived from this
+peer set by ``exit_multiple_from_peers()`` and are 5.0679 / 6.3135 / 7.2351,
+replacing the judgement figures 8.5 / 10.0 / 11.5 that rested on nothing. That
+changed no valuation output — the headline price is struck on Gordon — and the
+residual disagreement with Gordon is deliberately left standing.
 
 --------------------------------------------------------------------------
 The basis rule, which governs every figure below
@@ -52,16 +58,53 @@ the EV/EBITDA and EV/EBIT statistics, which is where the sheet's conclusion
 comes from.
 
 --------------------------------------------------------------------------
+PROVENANCE: the peer figures are NOT sourced to the standard Greggs' are
+--------------------------------------------------------------------------
+Controller ruling, fix round 1: this asymmetry gets stated rather than left for
+a reader to infer from a table that presents both at once.
+
+* **Greggs' own figures** (``inputs/greggs.py``) were read line by line from the
+  FY2023/24/25 annual report PDFs, with the printed page number recorded beside
+  every value, and each year's ``operating_costs`` residual written out so it can
+  be re-derived without reopening the filings.
+* **The peer figures below were not.** They come from each company's results
+  announcement — the correct primary document, and each one is named with its RNS
+  date beside the peer — but read through a summarising fetcher rather than from
+  the source document line by line. **No page references exist for them**, and
+  they should not be treated as carrying the same evidentiary weight as the
+  Greggs numbers.
+
+What makes them nonetheless usable, and it is not nothing: **every peer's
+figures cross-check internally against five or six independently quoted lines
+from the same announcement.** SSP: 222.8 + 130.8 + 10.5 = 364.1 exactly against
+the printed £364.1m, and 269.1 - 222.8 = 46.3 against the stated IFRS 16 effect.
+Domino's: 309.2 - 24.6 = 284.6, 22.9 + 217.2 = 240.1, 7.9 + 6.6 + 14.1 = 28.6.
+Wetherspoon: 72.205 + 2.003 + 0.218 + 39.939 = 114.365 against the stated total,
+and 52.042 + 355.161 = 407.203. M&B: 843 + 434 = 1,277 and 96 + 3 + 36 = 135.
+Whitbread: 175.6 + 4,347.5 = 4,523.1 and 649 - 185 = 464. Figures that tie across
+that many separately reported lines are very unlikely to be confabulated.
+
+**Two residuals are left standing rather than absorbed**, both flagged again at
+the figure itself: **SSP £1.3m** (0.19% of its EBITDA — its pre-IFRS 16 EBITDA
+reconciles one way but not the other) and **Whitbread £2m** (0.2% — the gap
+between the derived post-IFRS 16 EBITDA of £1,076m and the company's stated
+"Adjusted EBITDAR" of £1,074m, which the announcement does not explain).
+
+Practical consequence: the peer set is strong enough to rule out a 10x exit
+multiple and to set one at ~6.3x, which is what it is used for. It is not strong
+enough to carry a valuation on its own, and the headline share price does not
+depend on it — that is struck on Gordon.
+
+--------------------------------------------------------------------------
 How comparable each name actually is — read this before the median
 --------------------------------------------------------------------------
 Greggs is **leased-estate food-to-go retail**: a shop estate that is
 overwhelmingly leasehold (the £449.8m lease liability against £832.1m of owned
 PP&E is the only measure of that in this repo, and no shop count is recorded
 anywhere in it, so none is asserted here), vertically integrated manufacturing
-and distribution, very high transaction volume at a very low ticket. **Not one
-of the five is a close structural match
-to that**, and the honest thing is to say where each one breaks rather than let
-"UK food and hospitality" do the work.
+and distribution, very high transaction volume at a very low ticket. **Not one of
+the five is a close structural match to that**, and the honest thing is to say
+where each one breaks rather than let "UK food and hospitality" do the work.
 
 * **SSP Group — closest match, and it matters that it is the cheapest.**
   High-volume, low-ticket food-to-go out of leased/concession units. Breaks on:
@@ -142,6 +185,12 @@ dearly.
 --------------------------------------------------------------------------
 The basis conversion, and why the handover's estimate was wrong
 --------------------------------------------------------------------------
+**Everything in this section and the next concerns the SUPERSEDED driver
+values of 8.5 / 10.0 / 11.5.** They are kept because they are the evidence
+that forced the recalibration, and because the conversion arithmetic is a
+finding in its own right. The shipped driver is 5.0679 / 6.3135 / 7.2351 and
+is already post-IFRS 16 — do NOT put it through ``post_ifrs16_multiple()``.
+
 Task 9 handed over the expectation that a 10x multiple struck pre-IFRS 16 is
 "roughly 7-8x" post-IFRS 16, because the rent add-back inflates the denominator.
 Half of that is right. The rent add-back also inflates the NUMERATOR, because
@@ -172,7 +221,8 @@ handover thought.
 The residual disagreement, stated plainly
 --------------------------------------------------------------------------
 After conversion the three numbers for Base are: Gordon 5.19x, peer median
-7.54x, converted driver 9.03x. **The peers do not vindicate Gordon.** A terminal
+7.54x, converted superseded driver 9.03x. **The peers do not vindicate
+Gordon.** A terminal
 value struck at the peer median would be £3,680.2m against Gordon's £2,532.5m,
 1.45x higher, and would lift the Base implied price from 1,506.5p to 2,288.6p.
 That is a real finding and it is not smoothed over anywhere in this module.
@@ -226,7 +276,7 @@ simply wrong:
 
 **Where that leaves the arithmetic against the judgement**, Base case, in order:
 
-A. the driver against Gordon, 10.00x -> 5.19x, 4.81 turns, ADDITIVE:
+A. the SUPERSEDED driver against Gordon, 10.00x -> 5.19x, 4.81 turns, ADDITIVE:
 
      IFRS 16 basis conversion       10.00x -> 9.03x   0.97 turns    20.1%
      driver above ANY peer read      9.03x -> 6.32x   2.71 turns    56.3%
@@ -252,12 +302,21 @@ driver has never moved.
 
 **My reading**, for the owner rather than for the code:
 
-* ``exit_ev_ebitda`` at 8.5 / 10.0 / 11.5 is not supportable on this evidence in
-  any basis. Converted to post-IFRS 16 it is 7.70x / 9.03x / 10.40x, and the
-  capital-intensity-matched peer read is 6.32x for Base. I am NOT changing the
-  driver — the brief forbids it and it feeds a terminal value method that is not
-  the headline — but it should be recalibrated, and the target is roughly 6.3x
-  post-IFRS 16 for Base, not 10x.
+* ``exit_ev_ebitda`` at 8.5 / 10.0 / 11.5 was not supportable on this evidence
+  in any basis. Converted to post-IFRS 16 it was 7.70x / 9.03x / 10.40x, against
+  a capital-intensity-matched peer read of 6.32x for Base.
+  **Owner ruling, fix round 1: it is now derived.** See
+  ``exit_multiple_from_peers()`` and the derivation beside each scenario in
+  ``assumptions.py``. The shipped multiples are **5.0679 / 6.3135 / 7.2351**,
+  each being the peer median EV/EBIT of 13.4277x read at that scenario's own
+  terminal D&A/EBITDA (62.26% / 52.98% / 46.12%). The old +/-1.5 offsets were
+  NOT carried forward — they were attached to a number resting on nothing — so
+  the spread narrowed from 3.0 turns to 2.17, and the Bull > Base > Bear
+  ordering now falls out of the derivation instead of being imposed.
+  **This changed no valuation output.** The headline implied price is struck on
+  Gordon and is 624.7p / 1,506.5p / 2,560.7p before and after; what moved is the
+  reported exit-multiple terminal value (Base £4,882.4m -> £3,082.5m) and the
+  disagreement with Gordon, from 1.84x-2.26x down to 1.16x-1.35x.
 * Gordon is the more defensible of the two, but **it is not vindicated
   outright.** It sits ~18% below the matched peer read on Base and ~14% on Bull,
   and that residual is real. The handover's expectation — that the basis
@@ -575,6 +634,44 @@ def multiples(peers: list[Peer]) -> dict[str, dict[str, float]]:
         "ev_ebit": _stats([p.ev / p.ebit for p in peers]),
         "pe": _stats([p.market_cap / p.net_income for p in earners]),
     }
+
+
+def exit_multiple_from_peers(terminal_da_over_ebitda: float, peers: list[Peer]) -> float:
+    """The post-IFRS 16 EV/EBITDA exit multiple the peer set implies.
+
+        exit multiple = peer median EV/EBIT x (1 - terminal D&A / EBITDA)
+
+    **This is the function that sets ``drivers.exit_ev_ebitda``.** The driver
+    carries the literal — ``assumptions.py`` cannot import this module without
+    closing a cycle, since this module imports ``HIST_NET_INCOME`` from it — and
+    ``test_the_shipped_exit_multiples_are_the_peer_derived_ones`` ties the three
+    literals back to this function so neither can drift.
+
+    **Why the peer statistic is EV/EBIT and not EV/EBITDA.** EV/EBITDA across
+    the five spans 5.27x-10.12x (1.92x) while D&A/EBITDA spans 21.4%-60.8%: the
+    EBITDA multiple is substantially reporting capital intensity. On EV/EBIT the
+    same five span 9.13x-14.48x (1.59x) and the median is robust — dropping
+    Mitchells & Butlers, the one peer whose multiple is part property valuation,
+    moves it +0.13%.
+
+    **Why it is applied to the TERMINAL intensity.** The multiple values FY2030
+    EBITDA of a business the model deliberately makes more capital-intensive
+    than today's: Base terminal D&A/EBITDA is 52.98% against FY2025's 47.69%.
+
+    **Why not ``intensity_matched_multiple()``, which answers almost the same
+    question.** That function interpolates peer EV/EBITDA directly and agrees to
+    within 0.12% at Base and 0.02% at Bull — because the bracketing peers trade
+    within 0.26% of each other on EV/EBIT, so the two are the same observation.
+    But it REFUSES Bear, whose terminal 62.26% is above every peer. This form
+    extends where the interpolation cannot, so all three scenarios come off one
+    rule rather than two. The interpolation is kept as the cross-check.
+    """
+    if not 0.0 <= terminal_da_over_ebitda < 1.0:
+        raise ValueError(
+            "terminal D&A/EBITDA must be a fraction in [0, 1), got "
+            f"{terminal_da_over_ebitda}"
+        )
+    return multiples(peers)["ev_ebit"]["median"] * (1.0 - terminal_da_over_ebitda)
 
 
 def intensity_matched_multiple(da_over_ebitda: float, peers: list[Peer]) -> float:

@@ -531,8 +531,15 @@ def terminal_value_exit_multiple(final_ebitda: float, multiple: float) -> float:
     """EV/EBITDA exit multiple applied to the final forecast year's EBITDA.
 
     Post-IFRS 16 EBITDA, so rent is added back and the coherent multiple is
-    structurally lower than a pre-IFRS-16 one. ``drivers.exit_ev_ebitda`` has
-    not been recalibrated for that — see the task report and Task 10.
+    structurally lower than a pre-IFRS-16 one. ``drivers.exit_ev_ebitda`` HAS
+    now been recalibrated for that: Task 10 fix round 1 replaced the judgement
+    figures 8.5 / 10.0 / 11.5 with 5.0679 / 6.3135 / 7.2351, derived from the
+    peer set at each scenario's own terminal capital intensity. See
+    ``comps.exit_multiple_from_peers()`` for the derivation.
+
+    Note the multiple must be a POST-IFRS 16 one. It no longer needs converting,
+    and ``comps.post_ifrs16_multiple()`` must not be applied to it — doing so
+    would strip the lease basis out a second time.
     """
     return final_ebitda * multiple
 
@@ -605,10 +612,16 @@ def value_model(
 
     The headline enterprise value uses the GORDON terminal value on the
     re-based terminal year, plus the explicit excess-PP&E tax shield. The exit
-    multiple terminal value is computed alongside and reported, but is not
-    used: ``drivers.exit_ev_ebitda`` is a pre-IFRS-16-flavoured judgement that
-    disagrees with Gordon by 1.84x to 2.26x (Bull to Bear), and reconciling it
-    needs the comps sheet Task 10 builds.
+    multiple terminal value is computed alongside and reported, but is still not
+    used to build EV.
+
+    ``drivers.exit_ev_ebitda`` is no longer the pre-IFRS-16-flavoured judgement
+    it was: Task 10 derived it from the peer set, which narrowed the
+    disagreement with Gordon from 1.84x-2.26x to **1.16x-1.35x** (Bull to Bear).
+    The residual is deliberate and is not tuned away — see ``comps.py`` for what
+    it consists of. Because the exit multiple feeds nothing here but its own
+    reported field, that recalibration moved no valuation output;
+    ``test_recalibration_did_not_move_the_headline_share_price`` pins that.
     """
     rate = wacc(drivers)
     fcf = unlevered_fcf(model, drivers)

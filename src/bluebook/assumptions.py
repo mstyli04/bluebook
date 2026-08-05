@@ -479,9 +479,41 @@ BASE = Drivers(
     # Long-run UK inflation/nominal-GDP proxy, consistent with the BoE's 2%
     # inflation target; stays below risk_free_rate + 2% as required.
     perpetuity_growth=0.02,
-    # Judgement estimate for a UK quick-service bakery retail exit multiple;
-    # not an independently sourced live market comp.
-    exit_ev_ebitda=10.0,
+    # Post-IFRS 16 EV/EBITDA exit multiple, DERIVED from the Task 10 peer set.
+    # It is no longer a judgement estimate: the previous 10.0 was a round
+    # number resting on nothing, and Task 10's decomposition attributed 56.3%
+    # of the whole driver-vs-Gordon disagreement to it sitting above ANY peer
+    # evidence at all.
+    #
+    #     exit_ev_ebitda = peer median EV/EBIT x (1 - terminal D&A / EBITDA)
+    #                    = 13.4277 x (1 - 52.9813%) = 6.3135
+    #
+    # **Why EV/EBIT is the peer statistic and not EV/EBITDA.** Post-IFRS 16
+    # EV/EBITDA across the five peers spans 5.27x to 10.12x (1.92x) while
+    # D&A/EBITDA spans 21.4% to 60.8%; the multiple is largely reporting
+    # capital intensity. On EV/EBIT the same five span 9.13x to 14.48x
+    # (1.59x), and the median is robust: dropping Mitchells & Butlers, the one
+    # peer flagged as a property multiple rather than a trading one, moves it
+    # only +0.13% (13.4277x -> 13.4450x).
+    #
+    # **Why the terminal D&A share and not FY2025's.** The multiple is applied
+    # to the FY2030 EBITDA of a business the model deliberately makes MORE
+    # capital-intensive than today: terminal D&A/EBITDA is 52.98% against
+    # FY2025's 47.69%. Striking the multiple on today's intensity would price
+    # a company the forecast does not build.
+    #
+    # Cross-checked against comps.intensity_matched_multiple(), which
+    # interpolates peer EV/EBITDA directly at 52.98% and gives 6.3208x, 0.12%
+    # away. The two agree because Wetherspoon and SSP - the bracketing peers -
+    # trade within 0.26% of each other on EV/EBIT, so they are the same
+    # observation twice rather than two confirmations. See comps.py.
+    #
+    # NOT a fixed point: exit_ev_ebitda feeds only
+    # valuation.terminal_value_exit_multiple, which is reported and not used to
+    # build enterprise value, so it cannot move the terminal D&A share it is
+    # derived from. test_recalibrating_the_exit_multiple_leaves_the_terminal_
+    # intensity_untouched pins that.
+    exit_ev_ebitda=6.3135,
 
     # Rate the revolver actually draws at. Deliberately NOT the blended
     # cost_of_debt above: the RCF genuinely borrows at the RCF rate, and the
@@ -558,7 +590,9 @@ SCENARIOS = {
     # Consumer-slowdown / cost-inflation case: growth decelerates further,
     # gross margin compresses under input-cost pressure, opex ratio worsens
     # (less operating leverage), capex intensity runs 100bp below Base in
-    # every year, and the exit multiple de-rates.
+    # every year, and the exit multiple falls out LOWER - not asserted as a
+    # de-rating, but derived: Bear's heavier asset base against its smaller
+    # revenue absorbs more EBITDA in D&A. See exit_ev_ebitda below.
     #
     # The -100bp capex shift is not just "Base, but less". Bear's terminal
     # revenue growth is 1.5% against Base's 4.5%, and a slower-growing
@@ -611,14 +645,35 @@ SCENARIOS = {
         # post-programme sustaining level, derived above.
         capex_pct_revenue=(0.1227, 0.1110, 0.0960, 0.0800, 0.0682),
         rou_delta=-0.004,
-        exit_ev_ebitda=8.5,
+        # DERIVED on the same rule as BASE, at Bear's own terminal capital
+        # intensity: 13.4277 x (1 - 62.2578%) = 5.0679.
+        #
+        # NOT the old 8.5, and deliberately NOT "Base less 1.5". The +/-1.5
+        # offsets were attached to a number that rested on nothing, so
+        # inheriting their shape would have carried that arbitrariness forward.
+        # Each scenario now reads the same peer statistic at its own intensity,
+        # and the ordering Bull > Base > Bear falls out of the derivation rather
+        # than being imposed: Bear runs the heaviest asset base against the
+        # smallest revenue, so its D&A absorbs the most EBITDA and its coherent
+        # EBITDA multiple is the lowest. The spread narrows from 3.0 turns
+        # (8.5-11.5) to 2.17 turns (5.0679-7.2351) because capital intensity
+        # varies less across the scenarios than the old offsets asserted.
+        #
+        # Bear is the one scenario comps.intensity_matched_multiple() CANNOT
+        # price: its 62.2578% is above SSP's 60.84%, the most capital-intensive
+        # peer available, so no peer brackets it and that function raises rather
+        # than extrapolate. The EV/EBIT rule extends where the interpolation
+        # cannot, which is why it is the rule for all three.
+        exit_ev_ebitda=5.0679,
     ),
     "Base": BASE,
     # Continued strong footfall/expansion case: growth holds up better,
     # margin expands on scale/mix, opex ratio improves further with
     # operating leverage, capex intensity runs 80bp above Base in every
     # year (funding faster growth than Base must cost more, not less), and
-    # the exit multiple re-rates up.
+    # the exit multiple falls out HIGHER - again derived rather than asserted
+    # as a re-rating: Bull's lighter terminal D&A share leaves more of EBITDA
+    # available to the multiple. See exit_ev_ebitda below.
     #
     # Years 1-4 are a uniform +80bp off the Base path. The TERMINAL year is
     # given explicitly, on the same footing as Bear's and for the same
@@ -683,6 +738,13 @@ SCENARIOS = {
         # post-programme sustaining level, derived above.
         capex_pct_revenue=(0.1407, 0.1290, 0.1140, 0.0980, 0.0852),
         rou_delta=0.004,
-        exit_ev_ebitda=11.5,
+        # DERIVED on the same rule as BASE, at Bull's own terminal capital
+        # intensity: 13.4277 x (1 - 46.1177%) = 7.2351. See the Bear note above
+        # for why the old +/-1.5 offsets were not carried forward.
+        #
+        # Bull IS inside the peer range, and the interpolation cross-check is
+        # tighter here than at Base: comps.intensity_matched_multiple() gives
+        # 7.2369x against this 7.2351x, 0.02% apart.
+        exit_ev_ebitda=7.2351,
     ),
 }
