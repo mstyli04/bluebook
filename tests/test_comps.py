@@ -143,9 +143,9 @@ def test_ssp_ebitda_is_the_sum_of_three_printed_figures():
     """SSP verified line by line, fix round 3 — the last unverified peer.
 
     SSP prints NO post-IFRS 16 underlying EBITDA, so the figure must be
-    constructed. It is now constructed from three PRINTED figures rather than a
-    four-component D&A build-up, which makes it independent of the one SSP
-    reading that is still ambiguous (amortisation, 10.4 or 10.5):
+    constructed. It is constructed from three PRINTED figures rather than a
+    four-component D&A build-up, so it needs no amortisation figure at all
+    (which is separately settled at 10.5 — see the test two below):
 
         pre-IFRS 16 underlying EBITDA            364.1  printed
       + depreciation of right-of-use assets      276.8  printed
@@ -172,27 +172,98 @@ def test_ssp_ebitda_is_the_sum_of_three_printed_figures():
     assert ssp.ebit - printed_statutory_operating_profit == pytest.approx(183.0)
 
 
-def test_the_ssp_narrative_route_is_the_one_that_produced_the_1_3m_residual():
-    """Why the reconciliation table beat the narrative sentence.
+def test_the_ssp_narrative_sentence_closes_on_its_three_printed_components():
+    """SSP's prose and SSP's reconciliation table agree exactly.
 
-    SSP's prose says right-of-use depreciation of £276.8m "does not fully offset
-    the recognition of fixed rents of £(321.8)m". Taking that literally implies
-    an IFRS 16 operating-profit effect of -45.0, where the reconciliation table
-    states -46.3. The £1.3m gap was the "unreconciled residual" carried for two
-    rounds; it is an artefact of preferring prose to a table, not a defect in
-    the figure. This test records the wrong route so the resolution stays legible.
+    The full printed sentence, quoted to its full stop:
+
+        "Underlying operating profit is £46.3m lower on a pre-IFRS 16 basis, as
+         adding back the depreciation of the right-of-use assets of £276.8m does
+         not fully offset the recognition of fixed rents of £(321.8)m and the
+         gain on derecognition of leases of £(1.3)m."
+
+    Three named components, and they sum to the printed 46.3. The £1.3m that two
+    earlier rounds carried as an "unreconciled residual" is the third of them —
+    the gain on derecognition of leases — and it went missing only because the
+    sentence was quoted before its final clause. This test asserts what the
+    announcement says; a previous version asserted that the rent reversed was
+    really 323.1 rather than the printed 321.8, which the source contradicts.
     """
-    narrated_fixed_rents = 321.8
     printed_rou_depreciation = 276.8
-    printed_ifrs16_operating_cost_impact = 46.3
-    narrative_effect = printed_rou_depreciation - narrated_fixed_rents
-    table_effect = -printed_ifrs16_operating_cost_impact
-    assert narrative_effect == pytest.approx(-45.0)
-    assert table_effect - narrative_effect == pytest.approx(-1.3)
-    # The rent actually reversed is therefore 323.1, not 321.8.
-    assert printed_rou_depreciation + printed_ifrs16_operating_cost_impact == (
-        pytest.approx(323.1)
+    printed_fixed_rents = -321.8
+    printed_derecognition_gain = -1.3
+    printed_ifrs16_operating_profit_impact = -46.3
+
+    assert (
+        printed_rou_depreciation + printed_fixed_rents + printed_derecognition_gain
+    ) == pytest.approx(printed_ifrs16_operating_profit_impact)
+
+    # Nothing is left over once the third clause is read, so there is no residual.
+    residual = printed_ifrs16_operating_profit_impact - (
+        printed_rou_depreciation + printed_fixed_rents + printed_derecognition_gain
     )
+    assert residual == pytest.approx(0.0, abs=1e-9)
+
+    # And the £1.3m is already inside the 46.3 that builds the shipped EBITDA,
+    # so settling the sentence moves no figure.
+    ssp = next(p for p in PEERS if p.name == "SSP Group")
+    assert ssp.ebitda == pytest.approx(
+        364.1 + printed_rou_depreciation - printed_ifrs16_operating_profit_impact
+    )
+
+
+def test_ssp_ebitda_ties_a_second_way_off_the_post_ifrs16_printed_lines():
+    """The settled amortisation figure gives an independent route to 687.2.
+
+    The pre-IFRS 16 underlying EBITDA reconciliation prints "Amortisation of
+    intangible assets (10.5)" for 2025, which ties to the printed subtotals
+    (364.1 - 222.8 - 130.8 = 10.5). That settles a reading earlier rounds left
+    open, and it lets the shipped EBITDA be rebuilt from the post-IFRS 16 side:
+    printed underlying operating profit plus all three D&A lines.
+    """
+    printed_underlying_operating_profit = 269.1
+    printed_rou_depreciation = 276.8
+    printed_ppe_depreciation = 130.8
+    printed_amortisation = 10.5
+
+    # The amortisation figure is implied by the printed subtotals, not guessed.
+    printed_pre_ifrs16_ebitda = 364.1
+    printed_pre_ifrs16_operating_profit = 222.8
+    assert (
+        printed_pre_ifrs16_ebitda
+        - printed_pre_ifrs16_operating_profit
+        - printed_ppe_depreciation
+    ) == pytest.approx(printed_amortisation)
+
+    ssp = next(p for p in PEERS if p.name == "SSP Group")
+    assert ssp.ebitda == pytest.approx(
+        printed_underlying_operating_profit
+        + printed_rou_depreciation
+        + printed_ppe_depreciation
+        + printed_amortisation
+    )
+
+
+def test_ssp_associates_are_taken_from_the_ifrs_column_not_the_pre_ifrs16_one():
+    """8.2 and 8.4 are both printed; the module's basis picks 8.2.
+
+    SSP's "Reconciliation of key underlying profit measures" prints share of
+    profit from associates across three columns — underlying IFRS 8.2, impact of
+    IFRS 16 0.2, underlying pre-IFRS 16 8.4 (prior year 5.4 / 0.2 / 5.6). This
+    module is post-IFRS 16 throughout, so 8.2 is the figure the disclosure note
+    beside SSP uses, and the 3.05%-of-EBIT sizing follows from it. Reading across
+    to 8.4 would be a column-picking error of the same family as taking
+    Wetherspoon's pre-IFRS 16 £203.3m EBITDA.
+    """
+    underlying_ifrs_associates = 8.2
+    ifrs16_impact = 0.2
+    pre_ifrs16_associates = 8.4
+    assert underlying_ifrs_associates + ifrs16_impact == pytest.approx(
+        pre_ifrs16_associates
+    )
+
+    ssp = next(p for p in PEERS if p.name == "SSP Group")
+    assert underlying_ifrs_associates / ssp.ebit == pytest.approx(0.0305, abs=5e-5)
 
 
 def test_ssp_net_debt_ties_to_the_face_of_its_balance_sheet():
