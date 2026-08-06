@@ -59,8 +59,13 @@ from bluebook.workbook.formulas import year_header_links
 from bluebook.workbook.layout import FCST_COLS, HIST_COLS, Layout
 from bluebook.workbook.sheet import SheetWriter
 from bluebook.workbook.sheet_assumptions import write_assumptions
+from bluebook.workbook.sheet_comps import EXTRA_COLS as COMPS_EXTRA_COLS
+from bluebook.workbook.sheet_comps import write_comps
+from bluebook.workbook.sheet_dcf import write_dcf
 from bluebook.workbook.sheet_historicals import write_historicals
+from bluebook.workbook.sheet_lbo import write_lbo
 from bluebook.workbook.sheet_schedules import write_schedules
+from bluebook.workbook.sheet_sensitivity import write_sensitivity
 from bluebook.workbook.sheet_statements import (
     write_balance_sheet,
     write_cash_flow,
@@ -86,14 +91,12 @@ SHEET_ORDER = (
     "Football Field",
 )
 
-# Sheets Tasks 13 and 14 fill in. Written here with a title and nothing else,
-# so the tab order is fixed now and those tasks only add rows.
+# Sheets Task 14 fills in. Written here with a title and nothing else, so the
+# tab order is fixed now and that task only adds rows. Task 13 filled DCF,
+# Sensitivity, Comps and LBO, which is why they are no longer in this list —
+# `Layout.register` would refuse a second title row on a sheet a writer owns.
 PLACEHOLDER_TITLES = {
     "Checks": "Checks — integrity tests (Task 14)",
-    "DCF": "Discounted cash flow (Task 13)",
-    "Sensitivity": "Sensitivity analysis (Task 13)",
-    "Comps": "Trading comparables (Task 13)",
-    "LBO": "Leveraged buyout analysis (Task 14)",
     "Football Field": "Football field — valuation ranges (Task 14)",
 }
 
@@ -218,6 +221,16 @@ def _write_sheets(
     write_cash_flow(SheetWriter(sheets["CF"], layout), ref_layout, year_links)
     write_schedules(SheetWriter(sheets["Schedules"], layout), ref_layout, year_links)
 
+    # Comps before DCF because the DCF's exit-multiple memo reads the peer
+    # median EV/EBIT, and Sensitivity and LBO after both because they read the
+    # DCF's rows. The order is presentational only — Comps also reads the DCF's
+    # terminal capital intensity back, and it is the two-pass build rather than
+    # any ordering that lets a pair of sheets reference each other.
+    write_comps(SheetWriter(sheets["Comps"], layout), ref_layout)
+    write_dcf(SheetWriter(sheets["DCF"], layout), ref_layout, year_links)
+    write_sensitivity(SheetWriter(sheets["Sensitivity"], layout), ref_layout)
+    write_lbo(SheetWriter(sheets["LBO"], layout), ref_layout, year_links)
+
     _apply_presentation(wb)
     return wb
 
@@ -229,7 +242,10 @@ def _apply_presentation(wb: Workbook) -> None:
         ws.column_dimensions["B"].width = (
             COVER_LABEL_COL_WIDTH if ws.title == "Cover" else LABEL_COL_WIDTH
         )
-        for col in HIST_COLS + FCST_COLS:
+        # The year grid, plus the columns the Comps sheet uses beyond it for its
+        # peer statistics — taken from that module so the two cannot fall out of
+        # step if the peer table widens.
+        for col in HIST_COLS + FCST_COLS + COMPS_EXTRA_COLS:
             ws.column_dimensions[col].width = DATA_COL_WIDTH
         ws.column_dimensions["L"].width = SOURCE_COL_WIDTH
         # Freezing at C3 holds the label column and the year header in view.

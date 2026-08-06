@@ -1,7 +1,7 @@
 """The Assumptions sheet: the scenario switch, the drivers, the derived rates.
 
 Every forecast number in the workbook is ultimately a function of this sheet
-and of Historicals. It has five blocks:
+and of Historicals. It has six blocks:
 
 1. **The scenario switch**, cell ``C3`` — a validated dropdown over
    Bear / Base / Bull.
@@ -24,6 +24,10 @@ and of Historicals. It has five blocks:
    precisely so they cannot go stale against the data; they are written here
    as **formulas off the Historicals sheet** for the same reason, so the
    workbook shows the derivation instead of asserting the answer.
+6. **The LBO sponsor conventions** — entry leverage and the IRR hurdle. Added
+   in Task 13 because the LBO sheet may hold no constants of its own, and an
+   input resting on convention rather than on a filing still belongs on the
+   input sheet.
 
 --------------------------------------------------------------------------
 Where the switch sits, and the row-3 convention
@@ -52,6 +56,7 @@ from typing import Callable, Sequence
 from openpyxl.worksheet.datavalidation import DataValidation
 
 from bluebook.assumptions import RCF_COST_OF_DEBT, SCENARIOS
+from bluebook.lbo import SPONSOR_ENTRY_LEVERAGE, SPONSOR_IRR_HURDLE
 from bluebook.lease_rate import GREGGS_FY2025_LEASE_INTEREST
 from bluebook.schedules.leases import (
     GREGGS_LEASE_MATURITY_LESS_THAN_1YR,
@@ -386,6 +391,33 @@ def write_assumptions(
         f"=({borrowings}*{aref(ref_layout, SHEET, 'rcf_cost_of_debt', SCALAR_COL)}"
         f"+{lease_liabilities}*{aref(ref_layout, SHEET, 'lease_discount_rate', SCALAR_COL)})"
         f"/({borrowings}+{lease_liabilities})",
+        PERCENT_FORMAT,
+    )
+
+    # --- 6. LBO sponsor assumptions ---------------------------------------
+    # Two judgement conventions, and neither is sourced from anything — they
+    # are here rather than on the LBO sheet because that sheet may hold no
+    # constants (`HARDCODE_ALLOWED`), and an input with no formula behind it
+    # belongs on the input sheet whatever it drives. `lbo.py` states the case
+    # for each; the short version is that 4.0x is where a UK leveraged
+    # retail/hospitality structure is typically underwritten and 20% is the
+    # conventional equity hurdle. The leverage is deliberately LEASE-INCLUSIVE,
+    # which is the only definition consistent with the rest of this model:
+    # read lease-exclusive it would imply 5.28x total.
+    writer.blank()
+    writer.title("LBO sponsor assumptions (conventions, not sourced figures)")
+    _scalar_input(
+        writer,
+        "sponsor_entry_leverage",
+        "Sponsor entry leverage (x EBITDA, total net debt INCLUDING leases)",
+        SPONSOR_ENTRY_LEVERAGE,
+        MULTIPLE_FORMAT,
+    )
+    _scalar_input(
+        writer,
+        "sponsor_irr_hurdle",
+        "Sponsor IRR hurdle (conventional underwriting hurdle)",
+        SPONSOR_IRR_HURDLE,
         PERCENT_FORMAT,
     )
 

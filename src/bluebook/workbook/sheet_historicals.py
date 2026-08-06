@@ -16,10 +16,11 @@ and cost of sales would give the sheet two answers for the same quantity.
 
 from __future__ import annotations
 
+from bluebook.inputs.greggs import GREGGS_SHARE_COUNT
 from bluebook.inputs.schema import HistoricalYear
 from bluebook.workbook.layout import HIST_COLS
 from bluebook.workbook.sheet import SheetWriter
-from bluebook.workbook.styles import MONEY_FORMAT
+from bluebook.workbook.styles import MONEY_FORMAT, RATIO_FORMAT
 
 SHEET = "Historicals"
 
@@ -142,3 +143,22 @@ def write_historicals(
     writer.blank()
     writer.title("Cash flow")
     _transcribed(writer, historicals, CASH_FLOW_FIELDS)
+
+    writer.blank()
+    writer.title("Share count")
+    # Not a `HistoricalYear` field — there is one share count in the schema, a
+    # module-level constant, so it is written once in the last reported year's
+    # column rather than across all three. This is the count every per-share
+    # figure in the workbook is struck on: the DCF's implied price and the
+    # comps-implied price both divide by it. `comps.GREGGS_SHARES_OUTSTANDING`
+    # (101.96m) is a different number and is used only for the market
+    # capitalisation on Comps, where the provider's price needs the provider's
+    # count; the 0.51% gap between them is disclosed on that sheet.
+    share_count_row = writer.input_row(
+        "share_count",
+        "Weighted average shares in issue, diluted (m)",
+        [GREGGS_SHARE_COUNT.value],
+        RATIO_FORMAT,
+        cols=(HIST_COLS[-1],),
+    )
+    writer.ws[f"{SOURCE_COL}{share_count_row}"] = GREGGS_SHARE_COUNT.source

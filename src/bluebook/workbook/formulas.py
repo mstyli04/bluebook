@@ -26,6 +26,39 @@ def aref(layout: Layout, sheet: str, key: str, col: str) -> str:
     return f"'{sheet}'!${col}${layout.row_of(sheet, key)}"
 
 
+def cell(col: str, row: int, *, lock_col: bool = False, lock_row: bool = False) -> str:
+    """A reference to a cell on the sheet currently being written — ``$C7``.
+
+    Every cross-sheet reference in this workbook goes through `Layout.ref` or
+    `aref`, which is what stops a formula naming a row nobody registered. This
+    function is for the one case those two cannot express: a reference to a
+    cell on the SAME sheet with mixed anchoring, which the sensitivity grid
+    needs so that its twenty-five cells are one formula copied across a block
+    (``$C7`` walks down the WACC axis, ``D$4`` walks across the growth axis).
+
+    `row` must come from the writer, never from arithmetic: either the row
+    `SheetWriter.formula_row` returned when it wrote the axis, or the cursor
+    `SheetWriter.row` reports for the line about to be written. There is no
+    sheet name here to get wrong, and the row is still the writer's.
+    """
+    return f"{'$' if lock_col else ''}{col}{'$' if lock_row else ''}{row}"
+
+
+def cell_range(first_col: str, last_col: str, row: int) -> str:
+    """A contiguous run of one row on the sheet being written — ``C12:G12``.
+
+    Ranges are avoided everywhere else in this workbook (see `total`), because
+    a range that silently grows to include an inserted row is the error the row
+    registry exists to remove. The comps sheet is the one place a range is the
+    right expression rather than a shortcut: its statistics are MIN, MEDIAN and
+    MAX **over the peer set**, the peer set is exactly the columns this range
+    covers, and writing MEDIAN as an addition chain is not possible at all.
+    The range is built from the same column tuple that wrote the peer columns,
+    so it cannot cover a column no peer is in.
+    """
+    return f"{first_col}{row}:{last_col}{row}"
+
+
 def total(refs: Sequence[str]) -> str:
     """Sum of the given references, written out as an addition chain.
 
