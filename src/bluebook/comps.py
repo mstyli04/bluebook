@@ -105,19 +105,39 @@ EV/EBIT was overstated 5.6%.
 So, precisely:
 
 * internal ties bound **transcription** error — a digit typed wrong, a component
-  omitted from a sum, a figure read off the wrong column;
-* they bound **nothing at all** about whether the right figure was selected. A
-  basis-selection error produces an arithmetically perfect table.
-* Neither the comment audit nor the mutation sweep could catch it, and neither
-  ever will: the audit re-checks each claim against the value beside it, and the
-  value beside it was self-consistent; mutation testing perturbs shipped values
-  and asks whether a test notices, which says nothing about whether the shipped
-  value was the right line to take.
-* The only thing that catches a basis-selection error is **reading the
+  omitted from a sum;
+* they bound **nothing at all** about whether the right figure was selected.
+  A basis-selection error produces an arithmetically perfect table. **Reading a
+  figure off the wrong COLUMN belongs here, not in the bullet above** — an
+  earlier version of this paragraph listed it as bounded, and fix round 4
+  disproved that: had SSP's associates been taken as 8.4 from the pre-IFRS 16
+  column instead of 8.2 from the underlying IFRS column, 8.2 + 0.2 = 8.4 would
+  still tie and no cross-check in this module would have broken. Multi-column
+  APM reconciliations are where this sheet's remaining risk lives, and the only
+  defence is naming the column beside the number, which every peer note now does.
+* **A third class, and the paragraph enumerated only two until fix round 4:
+  quoting a source SHORT OF ITS FULL STOP.** Fix round 3 read SSP's explanatory
+  sentence as far as "the recognition of fixed rents of £(321.8)m" and stopped
+  before its final clause, "and the gain on derecognition of leases of £(1.3)m".
+  That produced a £1.3m "unreconciled residual" which was then explained with
+  four false claims and pinned in a test. Neither internal ties nor the remedy
+  in the bullet below would have caught it: no figure was mis-selected and no
+  arithmetic was wrong — the error was in the NARRATIVE that explains the
+  reconciliation. The rule that does catch it is procedural: quote to the full
+  stop, or mark the elision explicitly. An em-dash closing a quotation
+  mid-sentence hides the truncation from the next reader, including from yourself.
+* Neither the comment audit nor the mutation sweep could catch any of the three,
+  and neither ever will: the audit re-checks each claim against the value beside
+  it, and the value beside it was self-consistent; mutation testing perturbs
+  shipped values and asks whether a test notices, which says nothing about
+  whether the shipped value was the right line to take, and nothing at all about
+  prose.
+* The thing that catches a basis-selection or wrong-column error is **reading the
   company's own reconciliation** and preferring its printed subtotal to any
   build-up. Where a peer prints the subtotal, this module now uses it and says
   so; where it does not, the build-up is written out with the basis of every
-  component named.
+  component named. Note this remedy is silent on the third class above, which is
+  why that class is stated separately rather than folded in.
 
 One residual defence, and it is weak: the old comment was **self-refuting on its
 own face** — it said the £28.6m was added back to a statutory PBIT of £101.1m,
@@ -131,8 +151,12 @@ PRINTED versus CONSTRUCTED: which figure rests on what
 Because two of the five peers turned out to carry basis errors, a reader needs
 to see which figures are the company's own printed subtotals and which this
 module built. **All five EBITs are printed. Two of five EBITDAs rest on printed
-figures; three are constructed**, and no peer prints a post-IFRS 16 EBITDA
-except Domino's.
+figures; three are constructed**, and no peer prints a post-IFRS 16 UNDERLYING
+EBITDA except Domino's. The word "underlying" is load-bearing and an earlier
+version of this sentence omitted it, which made it false: M&B prints an
+"EBITDA before movements in the valuation of the property portfolio" of £460m
+and Whitbread an "Adjusted EBITDAR" of £1,074m, both post-IFRS 16. Neither is
+on the underlying basis this module needs — see the two cells below.
 
     peer          EBITDA                              EBIT
     ----------------------------------------------------------------------
@@ -145,8 +169,15 @@ except Domino's.
     Wetherspoon   CONSTRUCTED 146.409 + 114.365.       PRINTED "Operating
                   The printed £203.3m is PRE-IFRS       profit 146.4" before
                   16 and is not used.                   separately disclosed items
-    M&B           CONSTRUCTED 330 + 135. No            PRINTED "Adjusted
-                  underlying EBITDA is printed.         operating profit £330m"
+    M&B           CONSTRUCTED 330 + 135 = 465. M&B      PRINTED "Adjusted
+                  DOES print an EBITDA — "EBITDA        operating profit £330m"
+                  before movements in the valuation
+                  of the property portfolio" £460m —
+                  but it is struck off STATUTORY
+                  operating profit and carries £5m of
+                  separately disclosed items, so it is
+                  not on the underlying basis and is
+                  NOT used. 465 - 460 = 5 ties.
     Whitbread     CONSTRUCTED 649 + 209 + 218 =        PRINTED "Adjusted
                   1,076. The printed "Adjusted          operating profit £649m"
                   EBITDAR" £1,074m differs by £2m
@@ -725,13 +756,12 @@ PEERS: list[Peer] = [
         # consistent with the printed subtotals, 364.1 - 222.8 - 130.8 = 10.5.
         # An earlier version of this comment recorded 10.4-versus-10.5 as an
         # ambiguity the source "cannot settle"; the source does settle it, at
-        # 10.5, and two independent retrievals of the announcement return that
-        # row identically. A figure of (10.4) does appear elsewhere in the same
-        # announcement — retrievals place it variously in the operating-costs
-        # note, the cash flow statement and the underlying-IFRS column of the
-        # key-measures reconciliation, and no claim is made here about which,
-        # because it was not pinned down and does not need to be. What is
-        # settled is the row this build-up would use. The build-up above needs
+        # 10.5, and independent retrievals of the announcement return that row
+        # identically. A figure of (10.4) was also seen somewhere in the same
+        # announcement but was never located, and no candidate location is
+        # offered here, because naming one would invite the next reader to treat
+        # it as probable. What is settled is the row this build-up would use, and
+        # that is the whole of what matters. The build-up above needs
         # no amortisation figure at all, so the settlement moves nothing — but
         # it does give a second exact route to the same EBITDA, off the printed
         # post-IFRS 16 lines rather than the pre-IFRS 16 ones:
