@@ -33,13 +33,30 @@ that and no more:
   later group reading a frozen input.
 
 A five-year average-balance debt schedule is inherently such a chain — one
-circular group per year, linked by the closing balance — so on the average
-basis the recalculated workbook was exact in FY2026 and wrong in FY2027-30,
-unfixably: raising ``iterateCount`` to 10,000, tightening ``iterateDelta`` to
-1e-12 and recalculating seven times over all returned bit-identical answers,
-and rearranging the block into a single simple chain per year bought FY2026
-alone. Both LibreOffice behaviours are pinned in
-``tests/test_libreoffice_iteration_limits.py``, twelve cells apiece.
+circular group per year, linked by the closing balance — and it is *also*
+branched, because interest reaches cash twice: directly, and again through
+tax. So it hits both defects at once, and **no year of it comes out right,
+including the first.**
+
+Reproducible at HEAD (Base case): reinstate
+``AVERAGE(debt_opening, debt_closing)`` in the workbook's ``debt_interest`` row,
+recalculate, and compare against this module on ``basis="average"``. Closing
+borrowings are out by up to £44.9m, the balance sheet fails to balance by up to
+£43.4m, and the file holds cells that contradict each other outright — FY2026
+interest is 3.7021 on the Schedules sheet, self-consistent with its own closing
+balance of 109.62, while the income statement cell that does nothing but link to
+it reads 0.6875, which is ``AVERAGE(25, 0) x 5.5%``: the closing balance frozen
+at *zero*. FY2030's opening borrowings read 253.873 against FY2029's closing
+234.741, a second frozen cell in the other direction.
+
+Not fixable by configuration: raising ``iterateCount`` to 10,000, tightening
+``iterateDelta`` to 1e-12 and recalculating seven times over all return
+bit-identical answers. Both LibreOffice behaviours are pinned in
+``tests/test_libreoffice_iteration_limits.py``, twelve cells apiece, where each
+link of the chain is a *simple* cycle and the first one does resolve — which is
+what shows the two defects compound in the real block rather than either one
+being the whole story. ``docs/superpowers/spike-circularity.md`` carries the
+full record.
 
 On the opening basis the workbook is completely acyclic: interest depends only
 on the prior year's closing balance, so Task 15 can cross-check every cell of

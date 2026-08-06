@@ -19,7 +19,7 @@ class Layout:
         self._rows[(sheet, key)] = row
 
     def items(self) -> dict[tuple[str, str], int]:
-        """A read-only copy of every ``(sheet, key) -> row`` registration.
+        """A detached copy of every ``(sheet, key) -> row`` registration.
 
         Added for `build.py`'s two-pass build, which measures row positions on
         a throwaway pass and then writes the real formulas on a second pass:

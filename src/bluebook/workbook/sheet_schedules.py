@@ -31,17 +31,26 @@ already fixed by the opening balance.
 ``"average"`` until Task 12 fix round 1, on the strength of Task 2's spike
 verifying that headless LibreOffice honours ``wb.calculation.iterate``. That is
 true, and it does not generalise: the spike's circularity was a single
-two-cell loop, and LibreOffice 24.2.7 resolves exactly that. Measured on the
-average-basis version of this very block, it resolved FY2026 exactly (balance
-check -9.6e-07) and left FY2027-30 each reading the prior year's closing debt
-frozen at its seed value, so borrowings read 25.0 for the rest of the
-forecast. ``iterateCount`` at 10,000, ``iterateDelta`` at 1e-12 and seven
-sequential recalculations all returned bit-identical answers — a stable wrong
-result, not an unfinished one — and reshaping the block so each year's loop
-was a single simple chain bought FY2026 alone. A five-year average-balance
-schedule is inherently a chain of five circular groups, and LibreOffice
-resolves only the first link of a chain (it also freezes the second branch of
-any branched loop). Both behaviours are pinned in
+two-cell loop, and LibreOffice 24.2.7 resolves exactly that. It freezes the
+second branch of a *branched* loop, and it resolves only the first link of a
+*chain* of loops. On the average basis this block is both at once — one
+circular group per year (the chain), with interest reaching cash both directly
+and through tax (the branch) — so **no year of it comes out right, including
+the first.**
+
+Reproducible at HEAD (Base case): reinstate
+``AVERAGE(debt_opening, debt_closing)`` in the `debt_interest` row below,
+recalculate, and closing borrowings are out by up to £44.9m against the same
+model on the average basis, with the balance sheet failing to balance by up to
+£43.4m (-3.0146 in FY2026 alone). The file also contradicts itself: FY2026
+interest is 3.7021 here on the schedule, self-consistent with its own closing
+balance of 109.62, while the ``IS`` cell that does nothing but link to it reads
+0.6875 — ``AVERAGE(25, 0) x 5.5%``, the closing balance frozen at *zero*. And
+FY2030's opening borrowings read 253.873 against FY2029's closing 234.741.
+
+Not fixable by configuration: ``iterateCount`` at 10,000, ``iterateDelta`` at
+1e-12 and seven sequential recalculations all return bit-identical answers — a
+stable wrong result, not an unfinished one. Both behaviours are pinned in
 `tests/test_libreoffice_iteration_limits.py`, twelve cells apiece, and the
 reasoning is recorded in `schedules/debt.py` and
 `docs/superpowers/spike-circularity.md`.

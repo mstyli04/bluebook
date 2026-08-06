@@ -54,23 +54,67 @@ basis and found LibreOffice 24.2.7 will not resolve it. Measured behaviour, with
 | --- | --- |
 | One simple cycle (the shape above) | Resolves it, to ~2e-6 of the analytical fixed point — the `iterateDelta` stopping slack |
 | A **branched** cycle: one cell inside the loop read by two cells also inside it | Iterates one branch and leaves the other holding the value it took on the seeding pass. Two cells containing the *identical formula* `=S!F6` end up 2.75 apart, and the group settles on a self-consistent but wrong fixed point |
-| A **chain** of cycles: several groups linked by a shared cell (one per forecast year) | Resolves the first link exactly and leaves every later group reading a frozen input |
+| A **chain** of cycles: several groups linked by a shared cell (one per forecast year) | Resolves the first link, to the same ~2e-6 as a lone cycle, and leaves every later group reading a frozen input. Measured on the twelve-cell reproduction, where each link is a *simple* cycle — see the note below before reading anything about the real schedule into this row |
 
-On the real workbook that meant FY2026 exact (balance check `-9.6e-07`) and
-FY2027–30 each solved with the prior year's closing debt frozen at its seed, so
-borrowings read 25.0 — the FY2025 actual — for the rest of the forecast, and the
-balance check ran to £178m.
+**The real schedule is both shapes at once, and no year of it resolves —
+including the first.** One circular group per year makes it a chain; interest
+reaching cash both directly and through tax makes each year branched as well. So
+the row above does not describe it, and the two defects compound.
+
+Reproducible at HEAD: reinstate `AVERAGE(debt_opening, debt_closing)` in the
+`debt_interest` row of the Schedules sheet, recalculate, and compare against
+`debt_schedule(..., basis="average")`. Base case, £m:
+
+```
+                              FY2026   FY2027   FY2028   FY2029   FY2030
+Sch closing debt  (Excel)     109.62   178.83   203.87   234.74   155.38
+                  (Python)    110.76   181.86   209.09   189.88   133.46   worst err 44.86
+Sch interest      (Excel)       3.702    7.932   10.524   12.062   11.254
+                  (Python)      3.733    8.047   10.751   10.972    8.892   worst err  2.36
+IS  interest      (Excel)       0.688    3.015    4.918   12.588   11.254
+                  (Python)      3.733    8.047   10.751   10.972    8.892   worst err  5.83
+BS  balance check (Excel)      -3.015   -7.932  -13.539  -13.013  -43.399   should be nil
+```
+
+No year is right, the first included. The file also contradicts *itself*, which
+is the clearest signature: `IS interest` does nothing but link to `Sch interest`,
+and in FY2026 the two read 0.688 against 3.702. The frozen one is
+`AVERAGE(25, 0) × 5.5%` — the closing balance frozen at **zero**, not at its 25.0
+seed. FY2030's opening borrowings read 253.873 against FY2029's closing of
+234.741, a second frozen cell in the other direction.
 
 **It is not a configuration problem.** `iterateCount` at 10,000 and
 `iterateDelta` at 1e-12 return a bit-identical answer, as does recalculating the
 saved file seven times in sequence: a stable wrong result, not an unfinished
-one. Nor is it a layout problem. Task 12 built a version reshaping each year's
-loop into a single simple chain — a signed `net_borrowing` row instead of paired
-repayment/draw rows, an indirect-basis cash line, tax and dividends re-expressed
-inline — and it bought FY2026 alone, at the cost of two duplicated expressions
-and an income statement whose below-EBIT lines were links. It was reverted. A
-five-year average-balance schedule **is** a chain of five circular groups; no
-arrangement of rows removes that.
+one.
+
+**Nor is it a layout problem** — though the evidence for that part is weaker than
+the rest of this document, and is labelled rather than dropped. Task 12 built a
+version reshaping each year's loop into a single simple chain (a signed
+`net_borrowing` row instead of paired repayment/draw rows, an indirect-basis cash
+line, tax and dividends re-expressed inline) and measured, on 2026-08-06 against
+that intermediate: FY2026 exact at a balance check of `-9.6e-07`, FY2027–30 each
+reading the prior year's closing debt frozen at its seed so that borrowings read
+25.0 for the rest of the forecast, and the balance check reaching £178m. **That
+version was reverted and is not recoverable from git, so none of those four
+figures can be re-derived at HEAD — they are dated observations against an
+intermediate that no longer exists.** They are recorded because they are what the
+rearrangement was judged on, and must not be read as properties of anything in
+the repository; in particular the "frozen at its seed / borrowings read 25.0"
+failure mode is that intermediate's, not the shipped block's, whose signature is
+the contradictory-cells table above. What can be re-derived is a stronger
+argument for the ruling anyway. The structural point stands independently of the
+rearrangement: a five-year average-balance schedule **is** a chain of five
+circular groups, and no arrangement of rows removes that.
+
+**Why this correction exists**, since it is the second-order lesson. The four
+figures above were originally written into this document, and into two module
+docstrings, as though they characterised the shipped average-basis block. They
+did not — they characterised a reverted intermediate. A reviewer reinstating the
+average basis at HEAD could not reproduce them, which for a document whose job is
+to justify a reversed design decision is the same problem as being wrong. Measure
+against what is in the repository, or label the measurement with what it was taken
+against.
 
 **Reproductions:** `tests/test_libreoffice_iteration_limits.py`, twelve cells
 each, named for what LibreOffice does rather than what the test does. They fail
