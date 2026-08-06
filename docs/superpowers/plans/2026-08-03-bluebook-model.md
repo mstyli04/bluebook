@@ -1923,7 +1923,12 @@ import pytest
 from bluebook.inputs.greggs import GREGGS_HISTORICALS
 from bluebook.workbook.build import build_workbook
 
-HARDCODE_ALLOWED = {"Cover", "Checks", "Assumptions", "Historicals", "Comps"}
+from bluebook.workbook.styles import HARDCODE_ALLOWED  # single source of truth
+
+# NOTE (2026-08-06): HARDCODE_ALLOWED was originally defined locally here. It is now a
+# production constant that SheetWriter enforces at write time, so a hardcode on a
+# calculation sheet fails where it is made rather than in this end-of-project scan.
+# Import it; do NOT redefine it, or the two can drift apart.
 
 
 @pytest.fixture(scope="module")
