@@ -1,4 +1,4 @@
-"""Debt schedule: revolving credit facility with circular interest.
+"""Debt schedule: revolving credit facility, interest on the opening balance.
 
 Pure function of opening debt, opening cash, exogenous pre-financing cash
 generation and the debt drivers. Does not import the other schedule modules
@@ -6,27 +6,56 @@ generation and the debt drivers. Does not import the other schedule modules
 gets wired together downstream in the linked three-statement model.
 
 --------------------------------------------------------------------------
-Interest basis — spike decision
+Interest basis — the spike decision, and why it was reversed
 --------------------------------------------------------------------------
 Interest on the revolver can be charged either on the *opening* debt balance
 (no circularity — interest is fixed before repayment/draw is known) or on
 the *average* of opening and closing balances (circular — the closing
-balance depends on interest, which depends on the closing balance). Excel
-resolves circular references via iterative calculation; Task 2's spike
-(``docs/superpowers/spike-circularity.md``) confirmed headless LibreOffice
-honours the ``wb.calculation.iterate`` settings openpyxl writes and
-converges such a formula to its analytical fixed point (observed within
-~3e-6 of 1500/19). That result is what licenses the average basis below —
-``INTEREST_BASIS`` records that the *workbook* uses it.
+balance depends on interest, which depends on the closing balance).
 
-Both bases are implemented regardless: the Python side is cheap, and the
-comparison test in tests/test_debt_schedule.py needs both to exist to be
-meaningful. Task 15's cross-check between this Python model and the
-recalculated workbook needs a like-for-like comparison, so the "average"
-solve here deliberately mirrors Excel's iterative calculation — fixed-point
-iteration seeded at the opening balance, not a closed-form solve — even
-though the closed form is available (see the spike's analytical fixed
-point).
+``INTEREST_BASIS`` was originally ``"average"``, on the strength of Task 2's
+spike (``docs/superpowers/spike-circularity.md``): headless LibreOffice does
+honour the ``wb.calculation.iterate`` settings openpyxl writes, and it did
+converge that spike's circular formula to its analytical fixed point (within
+~3e-6 of 1500/19).
+
+**Owner ruling, Task 12 fix round 1: the basis is now ``"opening"``.** The
+spike's conclusion was true but did not generalise, and Task 12 established
+where it stops. The spike's circularity was a *single* two-cell loop.
+Measured against LibreOffice 24.2.7, iterative calculation resolves exactly
+that and no more:
+
+* a **branched** circular group — one cell inside the loop read by two cells
+  that are also inside it — converges with the second branch frozen at the
+  value it held on the seeding pass, so two cells containing the identical
+  formula end up disagreeing;
+* a **chain** of circular groups resolves only the first link, leaving each
+  later group reading a frozen input.
+
+A five-year average-balance debt schedule is inherently such a chain — one
+circular group per year, linked by the closing balance — so on the average
+basis the recalculated workbook was exact in FY2026 and wrong in FY2027-30,
+unfixably: raising ``iterateCount`` to 10,000, tightening ``iterateDelta`` to
+1e-12 and recalculating seven times over all returned bit-identical answers,
+and rearranging the block into a single simple chain per year bought FY2026
+alone. Both LibreOffice behaviours are pinned in
+``tests/test_libreoffice_iteration_limits.py``, twelve cells apiece.
+
+On the opening basis the workbook is completely acyclic: interest depends only
+on the prior year's closing balance, so Task 15 can cross-check every cell of
+the financing block rather than having to exclude the one block whose
+construction was the reason for choosing "average" in the first place. The
+cost is real and worth naming: charging interest on the opening balance
+understates it in a year of rising debt, by roughly half a year's interest on
+the increase. It is common practice in production models for exactly this
+reason, and it is now a measured decision rather than a fallback.
+
+Both bases remain implemented: the Python side is cheap, and the comparison
+test in tests/test_debt_schedule.py needs both to exist to be meaningful. The
+"average" solve deliberately mirrors Excel's iterative calculation —
+fixed-point iteration seeded at the opening balance, not a closed-form solve
+— even though the closed form is available (see the spike's analytical fixed
+point). On the "opening" basis the same loop converges on its first pass.
 """
 
 from __future__ import annotations
@@ -35,7 +64,10 @@ from dataclasses import dataclass
 
 from bluebook.assumptions import Drivers
 
-INTEREST_BASIS = "average"
+# Which basis the WORKBOOK uses, and therefore which one `reference.py` runs so
+# the two agree. "opening" by owner ruling — see the module docstring above for
+# the LibreOffice measurements that reversed the spike's "average".
+INTEREST_BASIS = "opening"
 
 MAX_ITERATIONS = 50
 CONVERGENCE_TOLERANCE = 1e-9

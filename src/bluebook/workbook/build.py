@@ -28,20 +28,22 @@ be pointing one row off.
 --------------------------------------------------------------------------
 Iterative calculation
 --------------------------------------------------------------------------
-The debt schedule is circular by design (`schedules/debt.py` charges interest
-on the average of the opening and closing balance) and so is the tax and
-dividend loop around it. Iterative calculation is what lets a spreadsheet
-resolve that at all, and Task 2's spike confirmed headless LibreOffice honours
-the settings openpyxl writes: they are set here, once, on the workbook. Turning
-them off makes the whole financing block evaluate to `#VALUE!`.
+The finished workbook contains no circular reference: `INTEREST_BASIS` is
+``"opening"``, so interest depends only on the prior year's closing balance and
+every cell resolves in a single pass. Iterative calculation is switched on
+anyway, with the count and delta Task 2's spike verified LibreOffice honours.
 
-Setting them is necessary but, in LibreOffice, not sufficient. Measured during
-Task 12, LibreOffice 24.2.7 resolves only the first circular group in a chain
-of them, so FY2026's financing comes out exact and FY2027-30 do not. The
-finding, its minimal reproduction and why no arrangement of the rows fixes it
-are in `sheet_schedules.py`'s docstring and
-`tests/test_libreoffice_iteration_limits.py`. It is raised as a question about
-`INTEREST_BASIS` rather than worked around here.
+Retaining it on an acyclic workbook is deliberate, not leftover. It costs
+nothing — a workbook with no cycle iterates once whatever the setting — and it
+means an editor who later reintroduces a circularity (charging interest on
+average debt is the obvious candidate, and it was the basis until Task 12 fix
+round 1) gets a converged answer rather than `Err:522` across the financing
+block. What it does NOT do is make such an edit safe: LibreOffice resolves only
+the first circular group in a chain of them, which is why the basis was changed
+in the first place. That measurement, its twelve-cell reproduction and the
+reasoning are in `sheet_schedules.py`'s docstring, `schedules/debt.py`,
+`docs/superpowers/spike-circularity.md` and
+`tests/test_libreoffice_iteration_limits.py`.
 """
 
 from __future__ import annotations
@@ -99,10 +101,12 @@ COVER_TITLE = "Greggs plc — three-statement operating model and valuation"
 
 # Notes written to the Cover sheet as row labels, no values. The financing
 # assumption is here because the Task 8 review ruled it must be disclosed.
-# Checked against `reference.py` at this commit: forecast borrowings peak in
-# FY2028 in all three scenarios, at £191.9m (Bear) / £209.1m (Base) /
-# £212.9m (Bull) against the £100m facility drawn on at FY2025 — 1.9x to 2.1x
-# it — while peak-year leverage is 0.56x / 0.48x / 0.40x that year's EBITDA.
+# Checked against `reference.py` at this commit, ON THE OPENING INTEREST BASIS
+# (the figures moved when the basis changed, so they were recomputed rather
+# than carried over): forecast borrowings peak in FY2028 in all three
+# scenarios, at £190.2m (Bear) / £207.1m (Base) / £210.9m (Bull) against the
+# £100m facility drawn on at FY2025 — 1.9x to 2.1x it — while peak-year
+# leverage is 0.56x / 0.48x / 0.40x that year's EBITDA.
 COVER_NOTES = (
     ("cover_units", "All figures £m unless stated. Reported figures are post-IFRS 16."),
     (
@@ -112,9 +116,11 @@ COVER_NOTES = (
     ),
     (
         "cover_iteration",
-        "This workbook REQUIRES iterative calculation (enabled in the file: 100 "
-        "iterations, 0.0001 delta). The debt schedule charges interest on average "
-        "debt, which is circular by design.",
+        "There are no circular references: interest on borrowings is charged on "
+        "the opening balance, so the workbook recalculates in a single pass. "
+        "Iterative calculation is enabled anyway (100 iterations, 0.0001 delta) "
+        "so that a later edit introducing a circularity converges rather than "
+        "erroring.",
     ),
     (
         "cover_financing",
@@ -267,9 +273,9 @@ def build_workbook(
             f"in pass 2 may address the wrong cells: {differences}"
         )
 
-    # The debt schedule and the tax/dividend loop around it are circular by
-    # design; these three settings are what make Excel and LibreOffice solve
-    # them instead of reporting a circular-reference error.
+    # Kept on although the workbook is acyclic: free here, and it turns a
+    # future reintroduced circularity into a converged answer rather than
+    # `Err:522`. See the module docstring for what it does not protect against.
     wb.calculation.iterate = True
     wb.calculation.iterateCount = ITERATE_COUNT
     wb.calculation.iterateDelta = ITERATE_DELTA

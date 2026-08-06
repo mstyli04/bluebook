@@ -1,4 +1,4 @@
-"""The Schedules sheet: the four roll-forwards, plus equity and the debt solve.
+"""The Schedules sheet: the four roll-forwards, plus equity and the debt sweep.
 
 One sheet, six blocks, in `reference.py`'s computation order: working
 capital, fixed assets, intangibles, leases, equity and distributions, then
@@ -8,53 +8,52 @@ visible here as a green link into Historicals in the FY2026 column of every
 opening row.
 
 --------------------------------------------------------------------------
-The circular debt schedule, as Excel expresses it
+The debt schedule, and the circularity that is deliberately not here
 --------------------------------------------------------------------------
-`schedules/debt.py` charges interest on the *average* of the opening and
-closing debt balance, which makes the year genuinely circular: interest needs
-the closing balance, the closing balance needs the repayment or draw, the
-repayment needs the cash left after interest. Python resolves it by
-fixed-point iteration. The workbook does not resolve it at all — it simply
-writes the circularity down and lets Excel's iterative calculation find the
-same fixed point:
+`schedules/debt.py` charges interest on the OPENING debt balance, so this
+block is acyclic and every cell in it recalculates in one pass:
 
-**KNOWN OPEN ISSUE — headless LibreOffice does not resolve this block.**
-Task 2's spike verified LibreOffice honours ``wb.calculation.iterate`` on a
-*single* circular cell pair, and that is all it verified. Measured during
-Task 12, LibreOffice 24.2.7 resolves only the FIRST circular group in a chain
-of them: FY2026 comes out exact against `reference.py` (balance check
--9.6e-07), and FY2027-30 are each solved with the prior year's closing debt
-frozen at its seed value, so borrowings read 25.0 for the rest of the
-forecast. Raising ``iterateCount`` to 10,000, tightening ``iterateDelta`` to
-1e-12 and recalculating the file up to seven times all leave the answer
-bit-identical, so it is a stable wrong result rather than an unfinished one.
-A branched circular group fails the same way, freezing the second branch.
-`tests/test_libreoffice_iteration_limits.py` pins both behaviours in twelve
-cells apiece. A five-year average-balance debt schedule is inherently a chain
-of five circular groups, so NO arrangement of these rows fixes it — the
-`INTEREST_BASIS` decision needs an owner ruling, and Task 12's report raises
-it as a question rather than changing a constant an earlier task fixed. The
-rows below are the faithful expression of the model as specified.
-
-    debt_interest            = AVERAGE(debt_opening, debt_closing) * rate
+    debt_interest            = debt_opening * rate
     cash_before_debt_service = cash_opening + cash_generated - debt_interest
-    debt_repayment           = IF(cbds >= min_cash, MIN(debt_opening, cbds - min_cash), 0)
-    revolver_draw            = IF(cbds >= min_cash, 0, min_cash - cbds)
+    debt_repayment           = MAX(0, MIN(debt_opening, cbds - min_cash))
+    revolver_draw            = MAX(0, min_cash - cbds)
     debt_closing             = debt_opening - debt_repayment + revolver_draw
 
-`debt_interest` reads `debt_closing`, four rows below, which reads back up to
-`debt_interest`. That is the loop, and it is deliberate:
-``build.build_workbook`` sets ``wb.calculation.iterate`` with the count and
-delta Task 2's spike verified LibreOffice honours. Without those three
-settings this block evaluates to zeros or an error, which is why
-`INTEREST_BASIS = "average"` was only licensed once the spike had passed.
+`debt_interest` reads the opening balance above it, never the closing balance
+below, and nothing on any sheet reads back into a cell that feeds it — there is
+no `AVERAGE(` on this sheet at all. The
+outer tax and dividend loop that `reference.py` solves by iteration is
+likewise not a loop here: `cash_generated` reads ``IS!tax``, `dividends` reads
+``IS!net_income``, and both are downstream of an interest figure that was
+already fixed by the opening balance.
 
-`reference.py` has a second, outer loop on top of that one: `cash_generated`
-is net of tax and dividends, tax depends on profit before tax, which depends
-on this block's interest. In the workbook that is not a separate mechanism —
-`cash_generated` reads ``IS!tax`` and this sheet's `dividends` reads
-``IS!net_income``, so the outer loop is part of the same circular group and
-the same iteration settles both.
+**This is a reversal, and the reason belongs on the sheet.** The basis was
+``"average"`` until Task 12 fix round 1, on the strength of Task 2's spike
+verifying that headless LibreOffice honours ``wb.calculation.iterate``. That is
+true, and it does not generalise: the spike's circularity was a single
+two-cell loop, and LibreOffice 24.2.7 resolves exactly that. Measured on the
+average-basis version of this very block, it resolved FY2026 exactly (balance
+check -9.6e-07) and left FY2027-30 each reading the prior year's closing debt
+frozen at its seed value, so borrowings read 25.0 for the rest of the
+forecast. ``iterateCount`` at 10,000, ``iterateDelta`` at 1e-12 and seven
+sequential recalculations all returned bit-identical answers — a stable wrong
+result, not an unfinished one — and reshaping the block so each year's loop
+was a single simple chain bought FY2026 alone. A five-year average-balance
+schedule is inherently a chain of five circular groups, and LibreOffice
+resolves only the first link of a chain (it also freezes the second branch of
+any branched loop). Both behaviours are pinned in
+`tests/test_libreoffice_iteration_limits.py`, twelve cells apiece, and the
+reasoning is recorded in `schedules/debt.py` and
+`docs/superpowers/spike-circularity.md`.
+
+The cost of the opening basis is real: it understates interest in a year of
+rising debt, by roughly half a year's interest on the increase. What it buys
+is that Task 15 can cross-check every cell of this block against the Python
+model, instead of having to exclude the one block whose construction was the
+reason for choosing "average".
+
+Iterative calculation is still switched on in `build.py`. See the note there
+for why a now-acyclic workbook keeps it.
 """
 
 from __future__ import annotations
@@ -292,9 +291,9 @@ def write_schedules(writer: SheetWriter, ref_layout: Layout, year_labels) -> Non
                   f"-{me('dividends', c)}",
     )
 
-    # --- Debt and cash (circular — see the module docstring) --------------
+    # --- Debt and cash (acyclic — see the module docstring) ---------------
     writer.blank()
-    writer.title("Debt and cash (circular: needs iterative calculation)")
+    writer.title("Debt and cash")
     row(
         "cash_generated",
         "Cash generated before financing",
@@ -319,11 +318,15 @@ def write_schedules(writer: SheetWriter, ref_layout: Layout, year_labels) -> Non
         "Cash available before interest",
         lambda c: f"={me('cash_opening', c)}+{me('cash_generated', c)}",
     )
+    # On the OPENING balance, so this cell does not read the closing balance
+    # further down the block and the whole block stays acyclic. That is
+    # the owner ruling behind `INTEREST_BASIS = "opening"` — see the module
+    # docstring, `schedules/debt.py`, and the LibreOffice measurements in
+    # `tests/test_libreoffice_iteration_limits.py`.
     row(
         "debt_interest",
-        "Interest on borrowings (average of opening and closing debt)",
-        lambda c: f"=AVERAGE({me('debt_opening', c)},{me('debt_closing', c)})"
-                  f"*{driver('interest_rate_debt')}",
+        "Interest on borrowings (rate on opening debt)",
+        lambda c: f"={me('debt_opening', c)}*{driver('interest_rate_debt')}",
     )
     row(
         "cash_before_debt_service",

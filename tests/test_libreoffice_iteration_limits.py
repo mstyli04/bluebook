@@ -3,8 +3,8 @@
 Task 2's spike established that LibreOffice honours the ``wb.calculation``
 iteration settings openpyxl writes, and `INTEREST_BASIS = "average"` in
 `schedules/debt.py` was chosen on that basis. The spike used one circular cell
-pair. This file measures the two shapes the real workbook actually needs, and
-LibreOffice resolves neither:
+pair. This file measures the two shapes an average-balance debt schedule
+actually needs, and LibreOffice resolves neither:
 
 * a **branched** circular group — one cell inside the loop read by two cells
   that are also inside it — converges with the second branch frozen at its
@@ -13,15 +13,20 @@ LibreOffice resolves neither:
   group per year — resolves the first group correctly and then leaves the rest
   reading frozen inputs.
 
-Both are pinned here rather than only described in prose, because the
-conclusion they support is load-bearing: a five-year average-balance debt
-schedule cannot be made to recalculate correctly in LibreOffice by rearranging
-its rows, so the interest basis is an owner decision rather than a layout
-problem. See `workbook/sheet_schedules.py`.
+Both are pinned here rather than only described in prose, because they are the
+evidence for a decision that would otherwise look arbitrary: `INTEREST_BASIS`
+is now ``"opening"`` (owner ruling, Task 12 fix round 1), which makes the
+workbook acyclic and lets Task 15 cross-check every cell of it. A five-year
+average-balance schedule is inherently a chain of circular groups, so that was
+not a layout problem anyone could have rearranged their way out of — the
+measurements below are why. See `schedules/debt.py`,
+`workbook/sheet_schedules.py` and `docs/superpowers/spike-circularity.md`.
 
-If a future LibreOffice fixes either behaviour, the assertions below will fail
-with a message saying so; that is a prompt to revisit `INTEREST_BASIS`, not a
-regression.
+If a future LibreOffice fixes either behaviour, the assertions below fail with a
+message saying so. That is an invitation to reconsider the average basis, not a
+regression: charging interest on opening debt understates it in a year of rising
+debt, so the reason for preferring "average" has not gone away, only the ability
+to compute it here.
 """
 
 from pathlib import Path
@@ -60,7 +65,7 @@ def _solve_year(opening: float) -> tuple[float, float]:
     return interest, closing
 
 
-def test_a_single_circular_group_resolves_correctly(tmp_path: Path):
+def test_libreoffice_resolves_a_single_circular_group(tmp_path: Path):
     """The shape Task 2's spike verified, restated in this file's terms."""
     wb = _iterating_workbook()
     ws = wb.active
@@ -79,7 +84,7 @@ def test_a_single_circular_group_resolves_correctly(tmp_path: Path):
     assert values["F8"] == pytest.approx(closing, abs=CONVERGED_TOLERANCE)
 
 
-def test_a_branched_circular_group_freezes_its_second_branch(tmp_path: Path):
+def test_libreoffice_freezes_the_second_branch_of_a_branched_circular_group(tmp_path: Path):
     """`X` feeds two cells that both feed `Y`; only one of them is iterated.
 
     The correct answer solves X = (A + Y) / 2 * r with Y = A + K - P - Q and
@@ -118,7 +123,7 @@ def test_a_branched_circular_group_freezes_its_second_branch(tmp_path: Path):
     )
 
 
-def test_a_chain_of_circular_groups_resolves_only_the_first(tmp_path: Path):
+def test_libreoffice_resolves_only_the_first_group_in_a_chain_of_circular_groups(tmp_path: Path):
     """Five years, each its own circular group, chained by the closing balance.
 
     This is the shape of a multi-year average-balance debt schedule. FY1 comes
