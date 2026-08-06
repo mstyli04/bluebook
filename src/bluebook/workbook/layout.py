@@ -18,6 +18,16 @@ class Layout:
             raise ValueError(f"{sheet} row {row} already holds '{taken[row]}'")
         self._rows[(sheet, key)] = row
 
+    def items(self) -> dict[tuple[str, str], int]:
+        """A read-only copy of every ``(sheet, key) -> row`` registration.
+
+        Added for `build.py`'s two-pass build, which measures row positions on
+        a throwaway pass and then writes the real formulas on a second pass:
+        it compares the two passes' registrations to prove they agree before
+        saving, so a formula can never point at a row the second pass moved.
+        """
+        return dict(self._rows)
+
     def row_of(self, sheet: str, key: str) -> int:
         try:
             return self._rows[(sheet, key)]

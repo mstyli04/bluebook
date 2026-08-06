@@ -25,6 +25,11 @@ MONEY_FORMAT = '#,##0.0;(#,##0.0)'
 PERCENT_FORMAT = '0.0%'
 MULTIPLE_FORMAT = '0.0"x"'
 PENCE_FORMAT = '#,##0"p"'
+# Added in Task 12 for two kinds of cell the four formats above do not cover:
+# figures that are neither money nor a rate (day counts, a lease term in
+# years, a unitless share), and the scenario switch, which holds text.
+RATIO_FORMAT = '#,##0.00'
+TEXT_FORMAT = 'General'
 
 # Hardcoded numeric constants are permitted only on these five sheets (the
 # model's inputs, transcribed reported figures, peer market data with no
