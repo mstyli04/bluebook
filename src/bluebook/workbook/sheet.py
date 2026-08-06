@@ -14,6 +14,17 @@ row values into `HIST_COLS` (three historical years), constructed with
 years). `year_header` alone can override the mode per call (its own
 `historical` argument), which lets one writer still label a historical block
 of columns it does not itself write values into.
+
+Row 1 is always the sheet title, row 2 the year header (the plan's Global
+Constraints state this explicitly) — `title()` and `year_header()` each
+advance the cursor by exactly one row, so the first row a caller registers
+through `input_row`/`formula_row` lands on row 3.
+
+`formula_row` and `input_row` enforce the hardcode rule from `styles.py`'s
+`HARDCODE_ALLOWED` at the point of writing, not just at a later scan: on any
+sheet outside that set, `formula_row` rejects any value that is not a
+`"="`-prefixed formula string, and `input_row` is rejected outright (its
+purpose — writing constants — is only legal on the allowed sheets).
 """
 
 from __future__ import annotations
@@ -26,10 +37,12 @@ from openpyxl.worksheet.worksheet import Worksheet
 from bluebook.workbook.layout import Layout
 from bluebook.workbook.styles import (
     FORMULA_FONT,
+    HARDCODE_ALLOWED,
     HEADER_FONT,
     INPUT_FONT,
     LINK_FONT,
     MONEY_FORMAT,
+    TITLE_FONT,
 )
 
 LABEL_COL = "B"
@@ -46,11 +59,11 @@ class SheetWriter:
         self.row = 1
 
     def title(self, text: str) -> None:
-        """Write a bold sheet title in column A and leave a blank row after it."""
+        """Write the sheet title in A1. The year header follows immediately on row 2."""
         cell = self.ws[f"A{self.row}"]
         cell.value = text
-        cell.font = Font(bold=True, size=14)
-        self.row += 2
+        cell.font = TITLE_FONT
+        self.row += 1
 
     def year_header(self, labels: Sequence[str], historical: bool | None = None) -> None:
         """Write year labels across the sheet's data columns, bold."""
@@ -69,7 +82,17 @@ class SheetWriter:
         values: Sequence,
         fmt: str = MONEY_FORMAT,
     ) -> int:
-        """Write a row of hardcoded values in blue and register it in the Layout."""
+        """Write a row of hardcoded values in blue and register it in the Layout.
+
+        Raises ValueError if this sheet is not in `HARDCODE_ALLOWED` — writing
+        constants at all is only legal on the five sheets that list permits.
+        """
+        if self.sheet not in HARDCODE_ALLOWED:
+            raise ValueError(
+                f"sheet {self.sheet!r} is not in HARDCODE_ALLOWED "
+                f"{sorted(HARDCODE_ALLOWED)!r}: input_row({key!r}, ...) may not "
+                f"write hardcoded constants here"
+            )
         return self._write_row(key, label, values, fmt, INPUT_FONT)
 
     def formula_row(
@@ -81,7 +104,20 @@ class SheetWriter:
         *,
         is_link: bool = False,
     ) -> int:
-        """Write a row of formulas (black, or green if `is_link`) and register it."""
+        """Write a row of formulas (black, or green if `is_link`) and register it.
+
+        On any sheet not in `HARDCODE_ALLOWED`, every value must be a
+        `"="`-prefixed formula string; a bare constant raises ValueError
+        naming the sheet, the key and the offending value, so it is caught
+        here rather than by a later scan of the finished workbook.
+        """
+        if self.sheet not in HARDCODE_ALLOWED:
+            for value in formulas:
+                if not (isinstance(value, str) and value.startswith("=")):
+                    raise ValueError(
+                        f"sheet {self.sheet!r}, row {key!r}: formula_row may only "
+                        f"write formula strings here, got {value!r}"
+                    )
         font = LINK_FONT if is_link else FORMULA_FONT
         return self._write_row(key, label, formulas, fmt, font)
 
