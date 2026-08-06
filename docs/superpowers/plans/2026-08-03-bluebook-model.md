@@ -1961,6 +1961,29 @@ def test_input_cells_are_blue_and_formula_cells_are_not(workbook):
                 )
 
 
+def test_the_workbook_has_no_circular_references(workbook):
+    """The acyclicity the design depends on, enforced rather than assumed.
+
+    Added 2026-08-06. Task 12 established that headless LibreOffice cannot
+    resolve a chained or branched circularity: it freezes the second branch of a
+    branch and resolves only the first link of a chain, silently, returning a
+    self-consistent but wrong fixed point. The interest basis was switched to
+    "opening" precisely so the workbook is acyclic and every cell can be
+    cross-checked. A reviewer proved acyclicity by parsing all 490 formulas into
+    a 1,050-edge reference graph — but that proof lived in a review transcript,
+    and nothing in the suite would have failed if someone reinstated an
+    average-basis interest row. This is that proof, made permanent.
+
+    Parse every formula into (sheet, cell) edges and assert the graph is acyclic.
+    Handle quoted and unquoted sheet prefixes, absolute markers, and ranges. On
+    failure, report the cycle found — a cycle is not a style violation, it is a
+    workbook whose recalculated values cannot be trusted.
+    """
+    graph = _reference_graph(workbook)
+    cycle = _find_cycle(graph)
+    assert cycle is None, f"circular reference: {' -> '.join(cycle)}"
+
+
 def test_every_sheet_has_a_title_in_a1(workbook):
     for ws in workbook.worksheets:
         assert isinstance(ws["A1"].value, str) and ws["A1"].value.strip(), ws.title
