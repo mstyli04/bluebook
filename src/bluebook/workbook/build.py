@@ -48,9 +48,11 @@ reasoning are in `sheet_schedules.py`'s docstring, `schedules/debt.py`,
 
 from __future__ import annotations
 
+from math import ceil
 from pathlib import Path
 
 import openpyxl
+from openpyxl.styles import Alignment
 from openpyxl.workbook.workbook import Workbook
 
 from bluebook.assumptions import FORECAST_YEARS, SCENARIOS
@@ -149,6 +151,12 @@ LABEL_COL_WIDTH = 56.0
 COVER_LABEL_COL_WIDTH = 110.0
 DATA_COL_WIDTH = 13.0
 SOURCE_COL_WIDTH = 44.0
+# Characters that fit on one wrapped line of the Cover's 110-wide column, and
+# the height one line needs. The character figure is deliberately under the
+# column width: it is a proportional font, so a fitted estimate would truncate
+# on any note that happens to be wide-charactered.
+COVER_WRAP_CHARS = 100
+COVER_LINE_HEIGHT = 15.0
 
 ITERATE_COUNT = 100
 ITERATE_DELTA = 0.0001
@@ -257,8 +265,34 @@ def _apply_presentation(wb: Workbook) -> None:
         for col in HIST_COLS + FCST_COLS + COMPS_EXTRA_COLS:
             ws.column_dimensions[col].width = DATA_COL_WIDTH
         ws.column_dimensions["L"].width = SOURCE_COL_WIDTH
-        # Freezing at C3 holds the label column and the year header in view.
-        ws.freeze_panes = "C3"
+        if ws.title == "Cover":
+            _lay_out_cover(ws)
+        else:
+            # Freezing at C3 holds the label column and the year header in view.
+            ws.freeze_panes = "C3"
+
+
+def _lay_out_cover(ws) -> None:
+    """Wrap the Cover's notes, and leave it unfrozen.
+
+    The Cover is the one sheet with neither a year header nor a grid to hold
+    in view, so freezing bought it nothing — and it cost: a frozen split at
+    column C clips whatever column B cannot show, and these notes run several
+    hundred characters against a 110-wide column, so each one was cut off
+    mid-sentence on the first sheet a reader opens.
+
+    Wrapping is the fix rather than a wider column, because the notes are
+    prose and a 450-character column is not readable. Row heights are set
+    explicitly: a file openpyxl wrote carries no cached row heights, so a
+    wrapped cell left to auto-fit shows as one line high until the reader
+    forces a recalculation of it.
+    """
+    for cell in ws["B"]:
+        if not isinstance(cell.value, str) or not cell.value:
+            continue
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+        lines = ceil(len(cell.value) / COVER_WRAP_CHARS)
+        ws.row_dimensions[cell.row].height = max(lines, 1) * COVER_LINE_HEIGHT
 
 
 def build_workbook(

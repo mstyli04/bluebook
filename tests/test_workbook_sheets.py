@@ -108,6 +108,34 @@ def test_first_data_row_is_row_3_on_every_written_sheet(workbook):
         assert workbook[sheet]["B3"].value == label, f"{sheet}!B3"
 
 
+def test_the_cover_wraps_its_notes_and_is_the_one_unfrozen_sheet(workbook):
+    """The Cover reads as prose; every other sheet keeps its frozen split.
+
+    A frozen split at column C clips whatever column B cannot display, and the
+    Cover's notes run to several hundred characters. Freezing bought that sheet
+    nothing anyway — it has no year header and no grid to hold in view — so it
+    is the one sheet written unfrozen and wrapped. The explicit row heights are
+    part of the fix, not decoration: openpyxl writes no cached row heights, so
+    a wrapped cell left to auto-fit opens one line high.
+    """
+    cover = workbook["Cover"]
+    assert cover.freeze_panes is None
+
+    notes = [cell for cell in cover["B"] if isinstance(cell.value, str) and cell.value]
+    assert len(notes) >= 5, f"expected the Cover's disclosures, found {len(notes)}"
+    for cell in notes:
+        assert cell.alignment.wrap_text, f"Cover!B{cell.row} does not wrap"
+        height = cover.row_dimensions[cell.row].height
+        assert height and height >= 15.0, (
+            f"Cover!B{cell.row} holds {len(cell.value)} characters but its row "
+            f"height is {height!r}"
+        )
+
+    for name in workbook.sheetnames:
+        if name != "Cover":
+            assert workbook[name].freeze_panes == "C3", f"{name} is not frozen at C3"
+
+
 def test_the_scenario_switch_sits_in_c3_and_holds_the_requested_scenario(workbook):
     assert workbook["Assumptions"]["C3"].value == "Base"
 
