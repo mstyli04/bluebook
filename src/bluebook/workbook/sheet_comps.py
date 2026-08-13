@@ -476,7 +476,7 @@ def write_comps(writer: SheetWriter, ref_layout: Layout) -> None:
             "note_median_is_one_peer",
             "The median of five observations IS one observation — here J D "
             "Wetherspoon, a majority-freehold pub company. Dropping any of the "
-            "three highest names moves the EV/EBIT median about -4.6%, which is "
+            "three highest names moves the EV/EBIT median by -4.6% (SSP or Whitbread) or -4.5% (JDW, which IS the median), which is "
             "the honest error bar on everything derived from it.",
         ),
         (

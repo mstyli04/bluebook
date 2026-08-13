@@ -86,7 +86,7 @@ equations in one remaining unknown, k:
 
     opening_liability / T + additions * k = lease_principal_paid
 
-    FY2024: 319.6 / 7.36 + 143.8 * k = 56.7  ->  k ≈ 0.093
+    FY2024: 319.6 / 7.36 + 143.8 * k = 56.7  ->  k ≈ 0.09232
     FY2025: 415.1 / 7.36 +  74.8 * k = 63.3  ->  k ≈ 0.092
 
 Solving the two simultaneously (rather than picking one) for the

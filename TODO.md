@@ -1,7 +1,7 @@
 # Bluebook — what is left to do
 
-**Updated 2026-08-13.** Repo: `~/bluebook`, branch `build-model`. HEAD after Task 16.
-298 tests passing, tree clean.
+**Updated 2026-08-13**, after the independent review of Tasks 13-16. Repo: `~/bluebook`,
+branch `build-model`. 305 tests passing, tree clean.
 
 This file is the handoff. It is written for whoever picks this up — including a future
 Claude session with no memory of building it.
@@ -10,15 +10,18 @@ Claude session with no memory of building it.
 
 ## 1. Where the project stands
 
-**All sixteen tasks are built. Tasks 1–12 were independently reviewed. Tasks 13, 14, 15
-and 16 have not been.**
+**All sixteen tasks are built and independently reviewed.** Tasks 13–16 were reviewed
+on 13 Aug 2026 by two agents working in parallel, one on the sheet writers and one on
+the test infrastructure. Both found real defects; everything they rated Major is fixed
+and verified, and section 4 lists what was deliberately left.
 
-That is the single outstanding item of substance, and it matters here more than the
-phrasing suggests: every significant defect in this project was found by an independent
-agent checking another's work, and the last four tasks have only ever been checked by
-their own author. What those four DID get was mutation testing, which is the strongest
-self-review available and did find real defects — see section 3 — but section 6 of the
-old handoff was right that a self-review is the weaker result.
+The review earned its keep, and the way it did is worth recording: **both reviewers
+independently found the same Major defect, and it was in the test infrastructure written
+to prevent exactly that class of thing.** Nothing in the suite failed when a check on the
+Checks sheet read FALSE — and the coverage audit excluded that sheet on the strength of a
+comment claiming it "had its own tests", which no test did. Set `TERMINAL_SHARE_CEILING`
+to 0.50 and 298 tests passed while the delivered workbook showed a FALSE on tab two. A
+self-review had already been run over this code and did not find it.
 
 The model is complete and verified. The workbook is complete and shipped.
 
@@ -32,15 +35,19 @@ WACC 7.7311%. Peer median EV/EBIT 13.4277×. FY2025 net debt including leases £
 Peak borrowings £190.2m / £207.1m / £210.9m at FY2028.
 
 **Verification as it now stands.** The generated workbook is recalculated through headless
-LibreOffice and compared against the Python model at 1e-9 across **728 cells per scenario**
-in all three scenarios (worst observed difference 5.0e-12). All 862 formulas parse into a
-2,464-edge reference graph with zero cycles, asserted on every run. Eight of eight Checks
-rows read TRUE in all three scenarios in the delivered file, with zero error cells.
+LibreOffice and compared against the Python model across **730 cells per scenario** in all
+three scenarios: 720 at 1e-9 (worst observed difference 5.0e-12) and 10 — the peer tie
+rows — at £0.01, which is as close as a market cap transcribed to £0.001m can tie. All 863
+formulas parse into a 2,495-edge reference graph over 1,085 nodes with zero cycles,
+asserted exactly (not as a floor) on every run. Eight of eight Checks rows read TRUE in all
+three scenarios, now asserted by `tests/test_checks_sheet.py` rather than by inspection,
+along with the sheet's ability to read FALSE at all. Zero error cells.
 
 ### The plan and the ledger
 
 - **Plan:** `docs/superpowers/plans/2026-08-03-bluebook-model.md`, amended in place as
-  findings came in. Read it as the current spec.
+  findings came in — but only through Task 12. **It is stale for Task 14** (see section 4);
+  read it as the spec for Tasks 1-12 and read the commit messages for 13-16.
 - **Spec:** `docs/superpowers/specs/2026-08-03-bluebook-dcf-design.md`.
 - **Ledger:** `.superpowers/sdd/2026-08-03-bluebook-model/progress.md` — git-ignored, and
   the single most useful file here. Every ruling and its reasoning.
@@ -94,9 +101,11 @@ references.
 a reviewer parsing formulas by hand, but that proof lived in a transcript, and nothing in
 the suite would have failed if an average-basis interest row returned — the failure is
 silent, because LibreOffice returns a plausible wrong number rather than an error. Two
-tests guard the guard: one that the parse is non-empty (a regex that stopped matching would
-make the acyclicity test pass on an empty graph), and one that reinstates the average-basis
-row the spike rejected and requires the finder to report the cycle.
+tests guard the guard: one asserting the graph's exact size (a regex that stopped expanding
+ranges drops 66 edges and would otherwise pass a floor, leaving the acyclicity test blind to
+the very "cycle through one cell of a MIN(...) range" that range expansion exists to catch),
+and one that reinstates the average-basis row the spike rejected and requires the finder to
+report the cycle.
 
 **It also corrected the financing disclosure, which was quoting the measure the plan
 explicitly rules out.** Both the Cover note and the peak-leverage check read gross
@@ -115,15 +124,32 @@ explicit row heights; every other sheet keeps its C3 split, and a test pins both
 
 ## 4. What is left
 
-1. **Independent review of Tasks 13, 14, 15 and 16**, on the most capable model, ideally as
-   one whole-branch review over `git merge-base main HEAD..HEAD`. Point it at section 5
-   below so it can triage the deferred list. The old handoff's per-task claims for Task 13
-   are now covered by tests rather than by assertion — every forecast cell on DCF,
-   Sensitivity and LBO is a formula (conventions scan), the cross-check was extended rather
-   than duplicated (it is one comparison), the grids are explicit 5×5 formula grids with all
-   fifty cells checked, the terminal year is mirrored from `valuation.py`, and the
-   exit-multiple caveat is pinned by its own test — but none of that has been checked by
-   anyone other than its author.
+1. **Deliberately not fixed from the 13 Aug review.** None is load-bearing; each is
+   recorded so the next reader does not have to rediscover it.
+   - `_REFERENCE` in `test_conventions.py` under-matches two formula shapes that this
+     workbook does not currently contain: lowercase column letters (`=c5+d6`, no
+     `re.IGNORECASE`) and fully-qualified ranges (`'Sheet'!C5:'Sheet'!C7` drops the
+     interior). Latent — `formulas.cell_range` never emits either — but it would make the
+     acyclicity proof partial if a writer ever did.
+   - Ten reported cells on `Historicals` (C38:C41, D39:D41, E39:E41 — capex, lease
+     principal repaid, ROU additions, dividends) are referenced by no formula and asserted
+     by nothing. They are transcription, not computation, but they are on a sheet a reader
+     reads.
+   - The coverage audit starts at row 3, so the 30 year-header link formulas on row 2 are
+     outside it; only `IS!F2` and `BS!J2` are asserted anywhere. A wrong column link there
+     is cosmetic but invisible.
+   - `scripts/generate.py` has no test. It behaves as documented, including raising
+     `ValueError` on an unknown scenario, but as an uncaught traceback.
+   - `LBO!C35` ("exit EV/EBITDA that would clear the hurdle") is checked against the same
+     identity arranged differently, so it would not catch an algebraically equivalent
+     rearrangement. Every operand is independently pinned; the docstring says so.
+   - `TEXT_FORMAT = 'General'` is a no-op and the name overstates it.
+   - **The plan is stale for Task 14** and TODO.md used to tell the next reader it was the
+     current spec. It still requires four football-field bars including the exit multiple,
+     still requires a `sheet_cover.py` that does not exist (the Cover lives in `build.py`),
+     and still names the 90% terminal bound. Every deviation was the right call and each is
+     explained in `07398c2`'s commit message — but the plan was amended in place for Tasks
+     4, 8, 11 and 12 and was not for 14. **Read the plan as the spec for Tasks 1–12 only.**
 
 2. **Then the distribution plan**, deliberately kept out of the build plan because it is not
    software and depends on the finished artefact:

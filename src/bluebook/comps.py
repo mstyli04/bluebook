@@ -542,7 +542,8 @@ Three consequences for anyone presenting this:
   model's own terminal EBIT. Labelling it "exit multiple" without saying so
   invites a reader to treat it as a second opinion when it is one observation.
 * **It is a single-peer number.** The median of five is the third observation,
-  and dropping any of the three highest names moves it about -4.6% (see
+  and dropping any of the three highest names moves it -4.6% (SSP or
+  Whitbread) or -4.5% (JDW, the median itself) (see
   ``test_the_peer_median_ev_ebit_is_robust_to_dropping_one_peer``). That is the
   honest error bar on the whole exit-multiple bar.
 * **Bear's derived multiple of 5.07x sits BELOW every peer's EV/EBITDA**, the

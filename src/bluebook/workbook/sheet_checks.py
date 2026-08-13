@@ -16,6 +16,18 @@ figure being tested is a reference.
 --------------------------------------------------------------------------
 The bounds, and why they are the numbers they are
 --------------------------------------------------------------------------
+* **Not all eight are the same kind of test, and the sheet cannot show that.**
+  Six are live cross-checks: break the thing they name and they read FALSE.
+  `check_debt_never_negative` is not — `debt_closing = debt_opening -
+  MIN(debt_opening, ·) + MAX(0, ·)` is non-negative identically, so it can
+  only fail if a future edit removes the `MIN` cap. It is worth keeping on
+  exactly those terms, as a regression guard, and it should not be read as
+  evidence the model was checked. The cash floor looks like the same case and
+  is not: `Schedules!cash_closing` is floored by construction, but the check
+  reads `CF!closing_cash`, which is built independently, and dropping the
+  revolver inflow from the cash flow statement alone does turn it FALSE.
+  Recorded here because a reader who works out the first case will otherwise
+  assume the second.
 * **The cash tie compares three constructions, not two.** The first version
   of this sheet tied ``CF!closing_cash`` to ``BS!cash`` and stopped there.
   Mutation testing on 13 Aug found that check could barely fail: ``BS!cash``
@@ -71,6 +83,9 @@ CF = "CF"
 DCF = "DCF"
 IS = "IS"
 SCHEDULES = "Schedules"
+HISTORICALS = "Historicals"
+# FY2025, the last reported year: the base the first forecast year steps off.
+LAST_ACTUAL_COL = "E"
 
 SCALAR_COL = "C"
 RESULT_COL = "D"
@@ -173,17 +188,28 @@ def write_checks(writer: SheetWriter, layout: Layout) -> None:
         f"Terminal value is below {TERMINAL_SHARE_CEILING:.0%} of enterprise value",
         f"{scalar(DCF, 'terminal_share_of_ev')}<{TERMINAL_SHARE_CEILING}",
     )
+    def revenue_growth_terms():
+        """One growth term per forecast year, INCLUDING the first.
+
+        The first forecast year is measured against the last reported year on
+        Historicals, not skipped. It used to be: the generator dropped index 0
+        because there is no prior forecast column to divide by, which quietly
+        left FY2026-vs-FY2025 — the one step that ties the whole forecast to
+        the reported base, and the step a driver wired to the wrong row
+        breaks — as the only year this check could not fail on. A 60% FY2026
+        growth rate passed it.
+        """
+        previous = layout.ref(HISTORICALS, "revenue", LAST_ACTUAL_COL)
+        for col in FCST_COLS:
+            yield (f"ABS({year(IS, 'revenue', col)}/{previous}-1)"
+                   f"<{MAX_REVENUE_GROWTH}")
+            previous = year(IS, "revenue", col)
+
     check(
         "check_revenue_growth_plausible",
-        f"No forecast revenue growth outside +/-{MAX_REVENUE_GROWTH:.0%}",
-        "AND("
-        + ",".join(
-            f"ABS({year(IS, 'revenue', col)}/{year(IS, 'revenue', FCST_COLS[index - 1])}-1)"
-            f"<{MAX_REVENUE_GROWTH}"
-            for index, col in enumerate(FCST_COLS)
-            if index > 0
-        )
-        + ")",
+        f"No forecast revenue growth outside +/-{MAX_REVENUE_GROWTH:.0%}, "
+        f"including the step off the last reported year",
+        "AND(" + ",".join(revenue_growth_terms()) + ")",
     )
     check(
         "check_peak_leverage_modest",
@@ -197,7 +223,8 @@ def write_checks(writer: SheetWriter, layout: Layout) -> None:
     writer.title("The figures behind the financing disclosure")
     value(
         "peak_borrowings",
-        "Peak forecast borrowings (£m) — against the £100m facility drawn at FY2025",
+        "Peak forecast borrowings (£m) — against the £100m facility Greggs drew on "
+        "at FY2025 (£25.0m drawn of £100m available)",
         "=MAX(" + ",".join(year(SCHEDULES, "debt_closing", col) for col in FCST_COLS) + ")",
     )
     value(

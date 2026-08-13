@@ -17,6 +17,8 @@ import pytest
 
 from bluebook.assumptions import Drivers, SCENARIOS
 from bluebook.comps import (
+    FY2025_NET_IMPAIRMENT_PPE,
+    FY2025_NET_IMPAIRMENT_ROU,
     GREGGS_52_WEEK_HIGH,
     GREGGS_52_WEEK_LOW,
     GREGGS_SHARE_PRICE,
@@ -106,6 +108,44 @@ def test_first_data_row_is_row_3_on_every_written_sheet(workbook):
     }
     for sheet, label in expected_first_labels.items():
         assert workbook[sheet]["B3"].value == label, f"{sheet}!B3"
+
+
+def test_the_cover_states_every_disclosure_it_must(workbook):
+    """The five things a reader must learn without opening another tab.
+
+    Three of them were missing and nobody noticed, because the only test of
+    the Cover's content was the plan's own — which asserted that the strings
+    "IFRS 16" and "net debt" appeared somewhere on the sheet, and passed on a
+    Cover that said neither of the things those phrases were standing in for.
+    The README meanwhile stated twice that the peer-provenance asymmetry was
+    disclosed here, which it was not.
+
+    Each assertion below names a substantive phrase from the disclosure it
+    guards, not a keyword that could appear by accident in another note.
+    """
+    notes = " ".join(
+        cell.value for cell in workbook["Cover"]["B"]
+        if isinstance(cell.value, str)
+    )
+
+    required = {
+        "lease treatment": "right-of-use depreciation sits inside D&A",
+        "leases in the bridge": "deducted as debt in the equity bridge",
+        "circularity decision": "interest on borrowings is charged on the opening balance",
+        "RCF upsize, on the lease-inclusive basis": "Lease-inclusive net debt peaks",
+        "the flattering basis, named as such": "gross borrowings alone would read",
+        "peer provenance": "PROVENANCE IS NOT SYMMETRIC",
+        "peer figures carry no page references": "carry no page references",
+        "impairment convention": "IMPAIRMENT CONVENTION",
+        "impairment is not like for like": "not like for like",
+        "unsourced inputs named": "reasoned judgement estimates",
+        "market data is an observation": "one-day",
+        "drivers are not guidance": "not company guidance",
+    }
+    missing = [name for name, phrase in required.items() if phrase not in notes]
+    assert not missing, (
+        "the Cover does not disclose: " + ", ".join(missing)
+    )
 
 
 def test_the_cover_wraps_its_notes_and_is_the_one_unfrozen_sheet(workbook):
@@ -695,6 +735,17 @@ PEER_TIE_ROWS = (
 # The 52-week range is the one figure in the workbook that goes stale, so it is
 # pinned to the sourced constant rather than left to be read off the sheet.
 GREGGS_MARKET_CELLS = (
+    # The PP&E/ROU split of FY2025 net impairment. Their SUM is checked
+    # against `greggs.impairment`, which is why these were first left out as
+    # "a transcription whose only honest expectation would be the sheet's own
+    # literals" — wrong on both counts. `comps.py` names them as constants and
+    # `sheet_comps.py` already imports them, so the honest expectation is the
+    # module's, exactly as for the peer inputs. And the sum is not cover:
+    # swapping 3.9 and 3.0 leaves it unchanged and escaped every test.
+    ("Comps", "FY2025 net impairment of PP&E, inside depreciation", "C",
+     lambda: FY2025_NET_IMPAIRMENT_PPE),
+    ("Comps", "FY2025 net impairment of ROU assets, inside depreciation", "C",
+     lambda: FY2025_NET_IMPAIRMENT_ROU),
     ("Comps", "Greggs share price (pence)", "C", lambda: GREGGS_SHARE_PRICE.value),
     ("Comps", "Greggs shares outstanding", "C", lambda: GREGGS_SHARES_OUTSTANDING.value),
     ("Comps", "52-week low", "C", lambda: GREGGS_52_WEEK_LOW.value),
@@ -1119,12 +1170,29 @@ def test_recalculated_workbook_reproduces_the_python_model(tmp_path, scenario):
     assert worst < RECALC_TOLERANCE
 
 
-# The sheets whose cells must be inside the cross-check. `Assumptions` and
-# `Historicals` are the model's inputs and are pinned by
-# `test_historicals_carries_the_reported_figures_and_their_sources` and
-# `test_driver_rows_choose_between_the_three_scenario_paths`; `Cover` is prose
-# and `Checks` is TRUE/FALSE, and both have their own tests. Everything else
-# computes something a reader would quote, so everything else is audited here.
+# The sheets whose cells must be inside the cross-check, and why the other
+# four are not. Each exclusion names where that sheet IS covered, because an
+# earlier version of this comment asserted cover that did not exist — it said
+# `Checks` had its own tests when no test read a single one of its results,
+# and a check reading FALSE is not an error value, so the error scan did not
+# see it either. Two independent reviews found it the same way.
+#
+# `Assumptions`: every driver is exercised by the 728-cell comparison below,
+#   run in all three scenarios, so all three driver columns are read.
+# `Historicals`: `test_historicals_carries_the_reported_figures_and_their_sources`,
+#   plus every figure the model consumes, which arrives here through the rows
+#   that ARE compared. Ten reported cells are referenced by no formula and
+#   asserted by nothing — see TODO.md; they are transcription, not
+#   computation, and are out of this audit's scope either way.
+# `Cover`: prose. `test_the_cover_states_every_disclosure_it_must` pins the
+#   content and `test_the_cover_wraps_its_notes_and_is_the_one_unfrozen_sheet`
+#   the layout.
+# `Checks`: TRUE/FALSE, covered by `tests/test_checks_sheet.py` — which
+#   asserts every result in every scenario, that the sheet can read FALSE at
+#   all, and the three disclosure figures in C13:C15.
+#
+# Everything else computes something a reader would quote, so everything else
+# is audited here.
 CALCULATION_SHEETS = (
     "IS",
     "BS",
@@ -1178,16 +1246,11 @@ CROSS_CHECK_EXEMPTIONS: tuple[tuple[str, str], ...] = (
     # injected, so a wrong working shows up as a wrong grid.
     ("Sensitivity", "Terminal PP&E / revenue"),
     ("Sensitivity", "Terminal total capex"),
-    ("Sensitivity", "Terminal D&A (% of revenue"),
+    ("Sensitivity", "Terminal D&A (% of revenue: PP&E + ROU depreciation + amortisation)"),
     ("Sensitivity", "Terminal depreciation and amortisation"),
     ("Sensitivity", "Terminal EBIT "),
     ("Sensitivity", "Terminal unlevered free cash flow"),
     ("Sensitivity", "Excess PP&E over this growth rate's"),
-    # The PP&E/ROU split of FY2025 net impairment. Their sum is checked against
-    # `greggs.impairment`; the split itself is a transcription whose only
-    # honest expectation would be the same two literals the sheet holds.
-    ("Comps", "FY2025 net impairment of PP&E"),
-    ("Comps", "FY2025 net impairment of ROU assets"),
 )
 
 
@@ -1195,6 +1258,18 @@ def _is_computed(value) -> bool:
     return isinstance(value, (int, float)) or (
         isinstance(value, str) and value.startswith("=")
     )
+
+
+def _label_matches(label: str, prefix: str) -> bool:
+    """The same word-boundary rule `_row_of` uses, for the same reason.
+
+    A bare `startswith` would exempt any future row whose label happens to
+    begin with an exempted one's text — "Opening PP&E reserve added by a later
+    editor" would inherit "Opening PP&E"'s exemption and never be audited.
+    An exemption should cover the row it was written for and nothing else.
+    """
+    prefix = prefix.rstrip()
+    return label == prefix or label.startswith(prefix + " ")
 
 
 def test_every_computed_cell_on_a_calculation_sheet_is_inside_the_cross_check(
@@ -1224,7 +1299,7 @@ def test_every_computed_cell_on_a_calculation_sheet_is_inside_the_cross_check(
                     continue
                 label = str(ws[f"B{cell.row}"].value or "").lstrip()
                 if any(
-                    name == sheet and label.startswith(prefix)
+                    name == sheet and _label_matches(label, prefix)
                     for sheet, prefix in CROSS_CHECK_EXEMPTIONS
                 ):
                     continue

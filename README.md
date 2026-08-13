@@ -7,12 +7,17 @@ numbers are machine-verified rather than asserted.
 
 **The verification is the point of the project.** The generated workbook is
 recalculated through headless LibreOffice and compared cell by cell against the
-Python model that produced it — 728 cells per scenario, across five forecast
-years and three scenarios, at a tolerance of **1e-9** (the worst difference
-observed is 5.0e-12). A separate scan parses all 862
-formulas into a 2,464-edge reference graph and proves it acyclic. A coverage
-audit asserts that no computed cell on a calculation sheet sits outside that
-comparison without a documented reason. 297 tests.
+Python model that produced it — 730 cells per scenario, across five forecast
+years and three scenarios. 720 of them are held to **1e-9** (the worst
+difference observed is 5.0e-12); the other 10 are the peer table's own tie
+rows, which are held to £0.01 because each peer market capitalisation is a
+figure transcribed rounded to £0.001m and cannot tie any closer. A separate
+scan parses all 863 formulas into a 2,495-edge reference graph and proves it
+acyclic. A coverage audit asserts that no computed cell on a calculation sheet
+sits outside that comparison without a documented reason, and the eight
+integrity checks on the workbook's second tab are themselves asserted — in
+every scenario, along with the fact that they are capable of reading FALSE.
+305 tests.
 
 | | Bear | Base | Bull |
 |---|---|---|---|
@@ -28,7 +33,7 @@ about 23% below the market. FY2025 net debt including lease liabilities £404.0m
 ```bash
 python3 scripts/generate.py          # writes dist/greggs_model.xlsx
 python3 scripts/generate.py Bull     # same file, switch starts on Bull
-python3 -m pytest                    # 297 tests
+python3 -m pytest                    # 305 tests
 ```
 
 The workbook in `dist/` is committed, so it can be opened without running
@@ -45,9 +50,15 @@ runs without it.
 The forecast drivers — revenue growth, margins, capex intensity, working
 capital days — are **the author's assumptions, reasoned from the historical
 record. They are not company guidance and Greggs has not published a forecast
-this was checked against.** The risk-free rate, equity risk premium, beta and
-RCF credit spread are judgement estimates too. Everything else in the workbook
-is either transcribed from a filing or derived from those transcriptions.
+this was checked against.**
+
+Nor are they the only unsourced inputs. The risk-free rate, equity risk
+premium, beta and RCF credit spread are judgement estimates; so are the £50m
+minimum cash floor and the LBO's 4.0× entry leverage and 20% IRR hurdle, which
+are conventions rather than facts. Every share price, share count and the
+52-week range is a one-day observation from a price provider rather than a
+filing. Everything else is transcribed from a filing or derived from those
+transcriptions. The same list is on the workbook's Cover sheet.
 
 ### Historicals are sourced line by line
 
@@ -123,6 +134,29 @@ rests entirely on printed EBIT figures. But the two sets of numbers sit in one
 table and are not of equal quality, and the workbook says so rather than
 presenting them as equivalents.
 
+### Known simplifications
+
+Things the model does not do, listed because an interviewer will find them and
+it is better to have said them first. None changes the shape of the answer;
+the largest is worth about 16p on a 1,506p Base case.
+
+- **The share count is weighted-average diluted**, an EPS construct, where
+  period-end diluted is the more standard divisor for an implied share price.
+  Worth roughly 16p per 1% of share count. It is the filing's figure and the
+  workbook carries the price provider's alternative beside it on `Comps`,
+  0.51% away.
+- **No finance income is modelled on the cash balance** — roughly £2m a year
+  pre-tax, £1.5m after. There is no driver for it, and adding one would mean
+  forecasting a rate on a balance the revolver already pins to its floor.
+- **The right-of-use mirror of the excess-PP&E tax shield is not applied**,
+  worth about 3p a share. The PP&E side is; the lease side was judged not
+  worth the extra terminal machinery.
+- **`ppe_depreciation_rate` includes impairment** and is also used as the
+  perpetual asset decay rate, so the perpetuity assumes the estate is impaired
+  at FY2025's rate forever. Conservative, and it lowers the valuation.
+- **The terminal EBITDA margin is left at the FY2030 driver** rather than
+  normalised to a through-cycle level.
+
 ### The exit multiple is not a second opinion
 
 The `DCF` sheet carries a terminal value on the Gordon growth method and one on
@@ -143,7 +177,7 @@ FALSE — all eight read TRUE in all three scenarios in the delivered file.
 
 | Sheet | |
 |---|---|
-| `Cover` | Disclosures: leases, circularity, the RCF assumption, peer provenance |
+| `Cover` | Disclosures: leases, circularity, the RCF assumption, peer provenance, the impairment convention, and what is not sourced |
 | `Checks` | Eight live integrity tests, plus the figures behind the financing note |
 | `Assumptions` | Drivers, all three scenario paths, and the switch in `C3` |
 | `Historicals` | FY2023–FY2025 as reported, with a page citation per line |
@@ -175,7 +209,7 @@ src/bluebook/
   comps.py         peer set and trading multiples
   lbo.py           sponsor case
   workbook/        the sheet writers, one per sheet
-tests/             297 tests
+tests/             305 tests
 scripts/generate.py
 dist/greggs_model.xlsx
 ```

@@ -278,25 +278,45 @@ def test_the_workbook_has_no_circular_references(workbook):
     )
 
 
-def test_the_reference_graph_is_big_enough_to_be_meaningful(workbook):
-    """Guards the acyclicity test against passing on an empty parse.
+# What the workbook parses to. Deterministic — three separate builds agree —
+# so these are asserted EXACTLY rather than as floors.
+#
+# Floors were the first attempt and they were too weak to do the job. The
+# point of this test is to catch `_REFERENCE` silently under-matching, and a
+# regex that stopped expanding ranges drops 66 edges while a `> 700` floor
+# still passes — leaving the acyclicity test blind to precisely the "cycle
+# through one cell of a MIN(...) range" that range expansion exists to catch.
+# Two of the three regressions tried were loud only by luck. An exact count is
+# the only version that fails on all of them.
+#
+# (The 490 formulas and 1,050 edges in the Task 12 ledger entry were this same
+# measurement of the workbook as it stood then, before Tasks 13 and 14 added
+# six sheets.)
+EXPECTED_FORMULA_CELLS = 863
+EXPECTED_EDGES = 2495
+EXPECTED_NODES = 1085
 
-    A regex that silently stopped matching would make the test above pass on a
-    graph with no edges at all, which is the "test that proves nothing" this
-    project keeps finding.
 
-    The workbook currently parses to 862 formula cells and 2,464 edges over
-    1,084 nodes. (The 490 formulas and 1,050 edges quoted in the Task 12 ledger
-    entry were the whole workbook as it stood then, before Tasks 13 and 14
-    added the DCF, Sensitivity, Comps, LBO, Checks and Football Field sheets —
-    the same measurement, not a different one.) The floors below are set well
-    under that on purpose: they assert that parsing happened at all, and are
-    not a count anybody has to maintain.
+def test_the_reference_graph_matches_its_recorded_size(workbook):
+    """Guards the acyclicity test against a parse that silently shrank.
+
+    If this fails after a deliberate change to the workbook, recount and
+    update the three constants — but recount, do not adjust until it passes.
+    A number nobody re-derived is how this project's dominant defect starts.
     """
     graph = _reference_graph(workbook)
     edges = sum(len(targets) for targets in graph.values())
-    assert len(graph) > 300, f"only {len(graph)} formula cells parsed"
-    assert edges > 700, f"only {edges} edges parsed"
+    nodes = set(graph) | {target for targets in graph.values() for target in targets}
+
+    assert (len(graph), edges, len(nodes)) == (
+        EXPECTED_FORMULA_CELLS,
+        EXPECTED_EDGES,
+        EXPECTED_NODES,
+    ), (
+        f"reference graph is {len(graph)} formula cells / {edges} edges / "
+        f"{len(nodes)} nodes, expected {EXPECTED_FORMULA_CELLS} / "
+        f"{EXPECTED_EDGES} / {EXPECTED_NODES}"
+    )
 
 
 def test_the_cycle_finder_reports_a_cycle_when_one_exists(workbook_path, tmp_path):

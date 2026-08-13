@@ -139,10 +139,45 @@ COVER_NOTES = (
         "already been credited for. Both figures are on the Checks sheet.",
     ),
     (
+        "cover_leases",
+        "LEASE TREATMENT: post-IFRS 16 throughout, and applied identically to the "
+        "DCF, the trading comps and the LBO so the three can be read against each "
+        "other. EBITDA excludes rent; right-of-use depreciation sits inside D&A; "
+        "new right-of-use additions are an investing outflow in unlevered free "
+        "cash flow; and lease liabilities are deducted as debt in the equity "
+        "bridge and carried in the debt weight of the WACC.",
+    ),
+    (
+        "cover_provenance",
+        "PROVENANCE IS NOT SYMMETRIC. Greggs' own historical figures were read "
+        "line by line from the annual reports and reconciled to the filings, each "
+        "with a page reference (Historicals, column L). The peer figures were "
+        "not: they came from results announcements, carry no page references, and "
+        "three of the five peer EBITDAs are build-ups from printed components "
+        "rather than printed subtotals. The load-bearing statistic — the peer "
+        "median EV/EBIT — rests only on printed EBIT figures. See Comps for the "
+        "detail; the two sets are in one table but are not of one standard.",
+    ),
+    (
+        "cover_impairment",
+        "IMPAIRMENT CONVENTION: the historical depreciation lines include the "
+        "year's net impairment, so D&A here exceeds the cash flow statement's "
+        "depreciation by £3.9-6.9m a year and impairment is added back as the "
+        "non-cash charge it is. One consequence is disclosed on Comps: Greggs' "
+        "EBIT is struck after impairment while every peer's underlying EBIT is "
+        "struck before it, so the headline EV/EBIT comparison is not like for "
+        "like. Comps carries the restated, like-for-like version beside it.",
+    ),
+    (
         "cover_estimates",
-        "The risk-free rate, equity risk premium, beta and RCF credit spread are "
-        "reasoned judgement estimates, not sourced figures. Every other input is "
-        "either transcribed from a filing (see Historicals, column L) or derived "
+        "NOT EVERYTHING HERE IS SOURCED. The risk-free rate, equity risk premium, "
+        "beta and RCF credit spread are reasoned judgement estimates; so are the "
+        "£50m minimum cash floor and the LBO's 4.0x entry leverage and 20% IRR "
+        "hurdle, which are conventions rather than facts. Market data — every "
+        "share price, share count and the 52-week range — is a one-day "
+        "observation from a price provider, not a filing. The forecast drivers "
+        "are the author's assumptions and are not company guidance. Everything "
+        "else is transcribed from a filing (see Historicals, column L) or derived "
         "from those transcriptions.",
     ),
 )
