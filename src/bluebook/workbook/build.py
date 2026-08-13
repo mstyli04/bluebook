@@ -128,9 +128,13 @@ COVER_NOTES = (
         "cover_financing",
         "FINANCING ASSUMPTION: the revolving credit facility is assumed to be "
         "upsized. Forecast borrowings peak in FY2028 in every scenario, at "
-        "roughly twice the £100m facility drawn against at FY2025. Peak-year "
-        "leverage stays modest at 0.4x-0.6x EBITDA, so the upsize is an "
-        "assumption about facility availability, not about solvency.",
+        "roughly twice the £100m facility drawn against at FY2025. Lease-"
+        "inclusive net debt peaks at 1.5x EBITDA in the Base case and 1.8x in "
+        "Bear, so the upsize is an assumption about facility availability, not "
+        "about solvency. That is the lease-consistent measure: against a post-"
+        "IFRS 16 EBITDA, gross borrowings alone would read 0.5x, which flatters "
+        "the position by excluding the lease obligations the denominator has "
+        "already been credited for. Both figures are on the Checks sheet.",
     ),
     (
         "cover_estimates",

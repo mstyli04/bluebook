@@ -41,15 +41,20 @@ The bounds, and why they are the numbers they are
 * **Revenue growth within +/-50%** a year. A shape check, not a forecast
   view: it catches a driver wired to the wrong row, which is the failure that
   produces a plausible-looking workbook.
-* **Peak leverage below 1.0x EBITDA.** This one is named after the
-  disclosure it belongs to rather than after the quantity it measures. The
-  model draws roughly £190-211m at its FY2028 peak against the £100m facility
-  Greggs actually drew on at FY2025, so the workbook assumes that facility is
+* **Lease-inclusive net debt below 2.0x EBITDA, every year.** The model draws
+  roughly £190-211m at its FY2028 peak against the £100m facility Greggs
+  actually drew on at FY2025, so the workbook assumes that facility is
   upsized — see the Cover. What makes that an assumption about availability
-  rather than about solvency is that peak-year leverage stays modest, and
-  that is the thing worth asserting: the Cover quotes 0.4x-0.6x, so a 1.0x
-  bound passes with real headroom and would fail long before the assumption
-  became implausible.
+  rather than about solvency is that leverage stays modest, and the honest
+  way to say so is on a consistent basis: EBITDA here is post-IFRS 16 and
+  excludes rent, so measuring gross borrowings against it leaves the lease
+  obligations out of the numerator while their add-back inflates the
+  denominator. That basis reads 0.40x-0.56x and is the most flattering of the
+  defensible measures; lease-inclusive net debt over the same EBITDA reads
+  1.30x (Bull), 1.51x (Base) and 1.78x (Bear). The check uses the latter and
+  the Cover quotes it. The gross figure is still written to the sheet, as a
+  labelled memo directly beneath, so the gap between the two is visible
+  rather than quietly resolved in favour of the better-looking one.
 """
 
 from __future__ import annotations
@@ -75,7 +80,14 @@ TIE_TOLERANCE = 1e-6
 TERMINAL_SHARE_CEILING = 0.97
 MAX_REVENUE_GROWTH = 0.5
 MINIMUM_CASH = 50.0
-PEAK_LEVERAGE_CEILING = 1.0
+# Lease-INCLUSIVE net debt / EBITDA. The basis matters more than the number:
+# EBITDA here is post-IFRS 16 and so excludes rent, which means a numerator of
+# gross borrowings alone is measured against a denominator inflated by the very
+# obligations it leaves out. That mismatch reads 0.40x-0.56x, the most
+# flattering of the defensible measures; on a consistent basis the same model
+# is at 1.30x-1.78x. 2.0x leaves real headroom over the Bear case's 1.78x
+# without being loose enough to pass on a materially more geared forecast.
+PEAK_LEVERAGE_CEILING = 2.0
 
 
 def write_checks(writer: SheetWriter, layout: Layout) -> None:
@@ -95,6 +107,20 @@ def write_checks(writer: SheetWriter, layout: Layout) -> None:
         assume a contiguity none of them promises.
         """
         return "AND(" + ",".join(build(col) for col in FCST_COLS) + ")"
+
+    def net_debt_over_ebitda(col: str) -> str:
+        """One year's lease-inclusive net debt over that year's EBITDA.
+
+        Borrowings less cash PLUS lease liabilities, against a post-IFRS 16
+        EBITDA. Both halves are then on the same side of the lease question,
+        which the gross-borrowings measure this replaced was not.
+        """
+        return (
+            f"({year(SCHEDULES, 'debt_closing', col)}"
+            f"-{year(SCHEDULES, 'cash_closing', col)}"
+            f"+{year(SCHEDULES, 'lease_liability_closing', col)})"
+            f"/{year(IS, 'ebitda', col)}"
+        )
 
     def check(key: str, label: str, expression: str) -> None:
         writer.formula_row(key, label, [f"={expression}"], TEXT_FORMAT, cols=RESULT)
@@ -162,11 +188,9 @@ def write_checks(writer: SheetWriter, layout: Layout) -> None:
     check(
         "check_peak_leverage_modest",
         "Peak borrowings are an assumed facility upsize, not a solvency problem: "
-        f"peak-year borrowings / EBITDA below {PEAK_LEVERAGE_CEILING:.1f}x",
-        across_years(
-            lambda col: f"{year(SCHEDULES, 'debt_closing', col)}"
-            f"/{year(IS, 'ebitda', col)}<{PEAK_LEVERAGE_CEILING}"
-        ),
+        f"lease-inclusive net debt / EBITDA below {PEAK_LEVERAGE_CEILING:.1f}x "
+        "every year",
+        across_years(lambda col: f"{net_debt_over_ebitda(col)}<{PEAK_LEVERAGE_CEILING}"),
     )
 
     writer.blank()
@@ -178,7 +202,14 @@ def write_checks(writer: SheetWriter, layout: Layout) -> None:
     )
     value(
         "peak_leverage",
-        "Peak borrowings / that year's EBITDA (x)",
+        "Peak lease-inclusive net debt / EBITDA (x) — the basis the check uses",
+        "=MAX(" + ",".join(net_debt_over_ebitda(col) for col in FCST_COLS) + ")",
+        MULTIPLE_FORMAT,
+    )
+    value(
+        "peak_leverage_gross",
+        "Memo: peak gross borrowings / EBITDA (x) — the flattering basis, shown "
+        "so the difference is visible rather than hidden",
         "=MAX("
         + ",".join(
             f"{year(SCHEDULES, 'debt_closing', col)}/{year(IS, 'ebitda', col)}"
