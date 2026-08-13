@@ -60,8 +60,10 @@ from bluebook.workbook.layout import FCST_COLS, HIST_COLS, Layout
 from bluebook.workbook.sheet import SheetWriter
 from bluebook.workbook.sheet_assumptions import write_assumptions
 from bluebook.workbook.sheet_comps import EXTRA_COLS as COMPS_EXTRA_COLS
+from bluebook.workbook.sheet_checks import write_checks
 from bluebook.workbook.sheet_comps import write_comps
 from bluebook.workbook.sheet_dcf import write_dcf
+from bluebook.workbook.sheet_football_field import write_football_field
 from bluebook.workbook.sheet_historicals import write_historicals
 from bluebook.workbook.sheet_lbo import write_lbo
 from bluebook.workbook.sheet_schedules import write_schedules
@@ -95,10 +97,7 @@ SHEET_ORDER = (
 # tab order is fixed now and that task only adds rows. Task 13 filled DCF,
 # Sensitivity, Comps and LBO, which is why they are no longer in this list —
 # `Layout.register` would refuse a second title row on a sheet a writer owns.
-PLACEHOLDER_TITLES = {
-    "Checks": "Checks — integrity tests (Task 14)",
-    "Football Field": "Football field — valuation ranges (Task 14)",
-}
+PLACEHOLDER_TITLES: dict[str, str] = {}
 
 COVER_TITLE = "Greggs plc — three-statement operating model and valuation"
 
@@ -230,6 +229,12 @@ def _write_sheets(
     write_dcf(SheetWriter(sheets["DCF"], layout), ref_layout, year_links)
     write_sensitivity(SheetWriter(sheets["Sensitivity"], layout), ref_layout)
     write_lbo(SheetWriter(sheets["LBO"], layout), ref_layout, year_links)
+    # Last: every bar on it is a link to a figure one of the sheets above
+    # computed, so it can only be written once they have registered their rows.
+    write_football_field(SheetWriter(sheets["Football Field"], layout), ref_layout)
+    # Checks reads rows on every sheet above, so it is written last and sits
+    # second in the tab order — position and write order are independent.
+    write_checks(SheetWriter(sheets["Checks"], layout), ref_layout)
 
     _apply_presentation(wb)
     return wb

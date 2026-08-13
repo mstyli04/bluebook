@@ -11,8 +11,41 @@ pointed at from here.
 
 ## 1. Where the project stands
 
-**12 of 16 tasks are closed and reviewed. Task 13 is built but NOT reviewed. Tasks 14–16
-have not been started.**
+**12 of 16 tasks are closed and reviewed. Task 13 is built but NOT reviewed. Task 14 is
+built but NOT reviewed (13 Aug 2026). Tasks 15–16 have not been started.**
+
+> **Update, 13 Aug 2026 — Task 14 built, uncommitted, unreviewed.** Adds
+> `sheet_football_field.py` and `sheet_checks.py`, wires both into `build.py`, empties
+> `PLACEHOLDER_TITLES`, and adds `scripts/generate.py` (which Task 16 also lists) and
+> `tests/test_football_field.py`. 289 tests pass, up from 282. The generated workbook was
+> recalculated through headless LibreOffice: all eight Checks rows read TRUE, the football
+> field's three bars carry real values, and there are no error cells anywhere in the file.
+> Peak borrowings recompute to £207.1m at 0.48x EBITDA, matching the figures the Cover
+> notes already quote for Base — an independent confirmation the Checks rows address the
+> intended lines. The Cover sheet half of Task 14 was already written by Task 12 and was
+> not touched.
+>
+> **Reviewed by mutation the same day, and it found a real defect.** Twelve mutations were
+> applied to the generated workbook, each recalculated through LibreOffice. Round 1 was
+> partly invalid — three mutations matched `'Closing'` to the wrong Schedules rows (Closing
+> PP&E, not Closing borrowings) and were re-run against exact cells. The finding that
+> survived: **`check_cash_ties` was very nearly vacuous.** It compared `CF!closing_cash` to
+> `BS!cash`, and `BS!cash` is literally `='CF'!closing_cash` — a cell against itself.
+> Breaking the cash flow statement's own `net_change_in_cash` left it reading TRUE; only
+> the balance-sheet check noticed, incidentally. Fixed by also tying to
+> `Schedules!cash_closing`, the debt schedule's independently constructed cash track.
+> Re-tested: the mutation that slipped through is now caught, and breaking the schedule's
+> track alone is caught by this check and by nothing else, so the added comparison carries
+> real coverage rather than restating the old one. All eight checks then verified TRUE in
+> **all three scenarios** with zero error cells, and the implied share prices reproduce this
+> file's own table exactly (624.68p / 1,506.50p / 2,560.65p).
+>
+> **Still not done for Task 14:** no independent agent has reviewed the code (this was a
+> self-review, which section 6 would say is the weaker result), and `check_debt_never_negative`
+> is a regression guard rather than a live test — closing borrowings cannot go negative by
+> construction while the repayment formula caps at `debt_opening`, so it can only fail if a
+> future edit removes that cap. It is worth keeping on those terms; it should not be read as
+> evidence the model was checked.
 
 The financial model is complete and verified. The workbook is substantially built.
 
