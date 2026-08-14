@@ -151,16 +151,22 @@ explicit row heights; every other sheet keeps its C3 split, and a test pins both
      explained in `07398c2`'s commit message — but the plan was amended in place for Tasks
      4, 8, 11 and 12 and was not for 14. **Read the plan as the spec for Tasks 1–12 only.**
 
-2. **Then the distribution plan**, deliberately kept out of the build plan because it is not
-   software and depends on the finished artefact:
-   - Public GitHub repo with the `.xlsx` committed and the README as the front door.
-   - A portfolio row on `cinematic-hero` with the football-field visual and a direct
-     download. Row order: Placement Scout first, Paper Alpha second, then this.
-   - Both CVs (`Michael_Stylianou_CV 0726.docx` and `0726 2.docx` in
-     `/mnt/c/Users/Michael/Desktop/Michael CVs/`): a Projects entry, and **"Financial
-     Modelling" added to Key Skills** — the line that was being held back until a real DCF
-     project existed.
-   - Re-mirror to `Desktop\Claude Code Projects`.
+2. **The distribution plan is DONE (14 Aug 2026).**
+   - Public repo: **https://github.com/mstyli04/bluebook**, `master` default, README as the
+     front door, `dist/greggs_model.xlsx` committed.
+   - `docs/football-field.png`, rendered by `scripts/render_football_field.py` from the
+     SHIPPED workbook's own recalculated values rather than rebuilt from the model beside
+     it, so the picture cannot drift from the artefact.
+   - Portfolio row **03** on `cinematic-hero` (live at michaelstylianou.vercel.app), with
+     CHART, DOWNLOAD and GITHUB links; rows 03-10 shifted down one, Placement Scout and
+     Paper Alpha keep 01 and 02.
+   - Both CVs carry a Bluebook Projects entry — first on the job version, third on the
+     postgrad-AI version so the AI projects still lead — and "Financial Modelling
+     (3-statement, DCF, LBO, comps)" was already in Key Skills from 13 Aug. PDFs
+     re-exported; both still 3 pages. Backups in `Michael CVs/backup_20260814/`.
+
+**Nothing is outstanding on this project.** What remains in section 5 is a triaged list of
+known minors, none load-bearing, kept so nobody rediscovers them.
 
 ---
 
