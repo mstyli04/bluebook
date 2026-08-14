@@ -19,6 +19,13 @@ integrity checks on the workbook's second tab are themselves asserted — in
 every scenario, along with the fact that they are capable of reading FALSE.
 305 tests.
 
+![Greggs valuation range by method](docs/football-field.png)
+
+*Drawn from the shipped workbook's own recalculated values — see
+`scripts/render_football_field.py`. Three bars, not four: the exit-multiple
+terminal value is arithmetically the peer median EV/EBIT times terminal EBIT,
+so a fourth bar would present one peer statistic twice. See below.*
+
 | | Bear | Base | Bull |
 |---|---|---|---|
 | Implied share price | 624.68p | **1,506.50p** | 2,560.65p |
