@@ -1,7 +1,7 @@
 # Bluebook — what is left to do
 
-**Updated 2026-08-13**, after the independent review of Tasks 13-16. Repo: `~/bluebook`,
-branch `build-model`. 305 tests passing, tree clean.
+**Updated 2026-08-14**, after the review and distribution. Repo: `~/bluebook`, public at
+github.com/mstyli04/bluebook, default branch `master`. 305 tests passing, tree clean.
 
 This file is the handoff. It is written for whoever picks this up — including a future
 Claude session with no memory of building it.
